@@ -7,7 +7,7 @@ This documentation provides an overview and usage guide for the MMDB CLI tool. T
 ## Table of Contents
 
 - [Installation](#installation)
- - [1. Go install](#1-go-install)
+  - [1. Go install](#1-go-install)
   - [2. Download and build from source](#2-download-and-build-from-source)
   - [3. Download pre-built binaries](#3-download-pre-built-binaries)
 - [Commands](#commands)
