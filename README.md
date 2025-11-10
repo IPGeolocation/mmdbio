@@ -7,6 +7,9 @@ This documentation provides an overview and usage guide for the MMDB CLI tool. T
 ## Table of Contents
 
 - [Installation](#installation)
+ - [1. Go install](#1-go-install)
+  - [2. Download and build from source](#2-download-and-build-from-source)
+  - [3. Download pre-built binaries](#3-download-pre-built-binaries)
 - [Commands](#commands)
   - [read](#read)
   - [metadata](#metadata)
@@ -22,6 +25,25 @@ This documentation provides an overview and usage guide for the MMDB CLI tool. T
 
 ## Installation
 
+### 1. Go install
+
+To install `mmdbio` using `go install`, run:
+
+```bash
+go install github.com/IPGeolocation/mmdbio@latest
+```
+
+Make sure `$GOBIN` or `$GOPATH/bin` is in your `PATH`, then run:
+
+```bash
+mmdbio --help
+```
+
+---
+
+
+### 2. Download and Build from Source
+
 Ensure you have Go installed and set up. Clone the repository and build the CLI:
 
 ```bash
@@ -33,6 +55,109 @@ go build -o mmdbio .
 You can now use `./mmdbio` to run the CLI.
 
 ---
+
+### 3. Download Pre-Built Binaries
+
+##### Overview
+These are prebuilt binaries for the `mmdbio` tool. Users can download these files directly from GitHub Releases without needing to build from source.
+
+The tool allows working with MaxMind DB files (MMDB) for geolocation purposes, including reading, converting, and analyzing `.mmdb` files.
+
+##### Prebuilt Binaries
+
+| Platform | Architecture | File Name |
+|----------|-------------|-----------|
+| Linux    | amd64       | mmdbio-1.0.0-linux-amd64.tar.gz |
+| Linux    | arm64       | mmdbio-1.0.0-linux-arm64.tar.gz |
+| macOS    | amd64       | mmdbio-1.0.0-darwin-amd64.tar.gz |
+| macOS    | arm64       | mmdbio-1.0.0-darwin-arm64.tar.gz |
+| Windows  | amd64       | mmdbio-1.0.0-windows-amd64.zip |
+
+---
+
+#### Installation Instructions
+
+##### 1. Linux
+1. Download the `.tar.gz` file for your architecture.
+2. Extract it to a folder in your PATH, e.g., `/usr/local/bin`:
+
+```bash
+tar -xzf mmdbio-1.0.0-linux-amd64.tar.gz -C /usr/local/bin
+```
+
+3. Rename the binary for simplicity:
+
+```bash
+mv /usr/local/bin/mmdbio-1.0.0-linux-amd64 /usr/local/bin/mmdbio
+```
+
+4. Make the binary executable:
+
+```bash
+chmod +x /usr/local/bin/mmdbio
+```
+
+5. Verify installation:
+
+```bash
+mmdbio --help
+```
+
+##### 2. macOS
+1. Download the `.tar.gz` file for your architecture (amd64 or arm64).
+2. Extract to a folder in your PATH, e.g., `/usr/local/bin`:
+
+```bash
+tar -xzf mmdbio-1.0.0-darwin-amd64.tar.gz -C /usr/local/bin
+```
+
+3. Rename the binary:
+
+```bash
+mv /usr/local/bin/mmdbio-1.0.0-darwin-amd64 /usr/local/bin/mmdbio
+```
+
+4. Make executable:
+
+```bash
+chmod +x /usr/local/bin/mmdbio
+```
+
+5. Verify installation:
+
+```bash
+mmdbio --help
+```
+
+##### 3. Windows
+1. Download the `.zip` file.
+2. Extract the `mmdbio-1.0.0-windows-amd64.exe` to a folder included in your system `PATH`.
+3. Rename the binary to `mmdbio.exe` for convenience.
+4. Open Command Prompt and verify:
+
+```cmd
+mmdbio --help
+```
+
+---
+
+##### Notes
+- Ensure execution permissions on Linux/macOS.
+- Recommended folder for binaries: `/usr/local/bin` or any folder in your PATH.
+- For updates, check GitHub Releases.
+- If `go install` fails due to proxy caching, use:
+
+```bash
+GOPROXY=direct go install github.com/IPGeolocation/mmdbio@latest
+```
+
+---
+
+##### Troubleshooting
+- **Command not found:** Ensure the binary is in a folder included in your PATH.
+- **Execution permission error:** Run `chmod +x <binary>` on Linux/macOS.
+- **Wrong architecture:** Download the binary matching your OS and CPU architecture.
+
 
 ## Commands
 
