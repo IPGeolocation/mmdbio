@@ -15,6 +15,7 @@ This documentation provides an overview and usage guide for the MMDB CLI tool. T
   - [inspect](#inspect)
   - [stats](#stats)
   - [verify](#verify)
+  - [completion](#completion)
 - [Examples](#examples)
 
 ---
@@ -200,6 +201,85 @@ mmdbio verify --db GeoIP2-City.mmdb
 - Exit code `0` if valid, `1` if invalid.
 
 ---
+
+### completion
+
+The `completion` command generates shell completion scripts for `mmdbio`, making it easier to use with Bash, Zsh, Fish, and PowerShell.
+
+**Usage**
+
+```bash
+mmdbio completion [bash|zsh|fish|powershell]
+```
+
+**Available Shells**
+
+- `bash`  
+- `zsh`  
+- `fish`  
+- `powershell`  
+
+ **Examples**
+
+***Bash***
+
+Load completions for the current session:
+
+```bash
+source <(mmdbio completion bash)
+```
+
+Install completions permanently:
+
+```bash
+# Linux
+mmdbio completion bash > /etc/bash_completion.d/mmdbio
+
+# macOS
+mmdbio completion bash > /usr/local/etc/bash_completion.d/mmdbio
+```
+
+ ***Zsh***
+
+Load completions:
+
+```bash
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+mmdbio completion zsh > "${fpath[1]}/_mmdbio"
+```
+
+***Fish***
+
+Load completions:
+
+```bash
+mmdbio completion fish | source
+```
+
+Install completions permanently:
+
+```bash
+mmdbio completion fish > ~/.config/fish/completions/mmdbio.fish
+```
+
+***PowerShell***
+
+Load completions:
+
+```powershell
+mmdbio completion powershell | Out-String | Invoke-Expression
+```
+
+Install completions permanently:
+
+```powershell
+mmdbio completion powershell > mmdbio.ps1
+```
+
+**Notes**
+
+- Ensure that you use the appropriate file path for your shell when installing completions permanently.
+- The `completion` command supports exactly **one argument**, which must be one of the valid shells listed above.
 
 ## Examples
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-APP_NAME="mmdb-reader"
+APP_NAME="mmdbio"
 VERSION="1.0.0"  # version
 
 rm -rf dist
@@ -16,7 +16,7 @@ targets=(
   "windows amd64"
 )
 
-echo "🚀 Building $APP_NAME $VERSION ..."
+echo "Building $APP_NAME $VERSION ..."
 
 for target in "${targets[@]}"; do
   os=$(echo $target | cut -d' ' -f1)
@@ -39,4 +39,4 @@ for target in "${targets[@]}"; do
   fi
 done
 
-echo "✅ Done! Binaries are in ./dist"
+echo "Done! Binaries are in ./dist"

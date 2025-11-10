@@ -8,36 +8,36 @@ import (
 
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
-	Short: "Generate completion script",
+	Short: "Generate shell completion scripts",
 	Long: `To load completions:
 
 Bash:
 
-  $ source <(yourapp completion bash)
+  $ source <(mmdbio completion bash)
 
   # To load completions for each session, execute once:
   # Linux:
-  $ yourapp completion bash > /etc/bash_completion.d/yourapp
+  $ mmdbio completion bash > /etc/bash_completion.d/mmdbio
   # macOS:
-  $ yourapp completion bash > /usr/local/etc/bash_completion.d/yourapp
+  $ mmdbio completion bash > /usr/local/etc/bash_completion.d/mmdbio
 
 Zsh:
 
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-  $ yourapp completion zsh > "${fpath[1]}/_yourapp"
+  $ mmdbio completion zsh > "${fpath[1]}/_mmdbio"
 
 Fish:
 
-  $ yourapp completion fish | source
-  $ yourapp completion fish > ~/.config/fish/completions/yourapp.fish
+  $ mmdbio completion fish | source
+  $ mmdbio completion fish > ~/.config/fish/completions/mmdbio.fish
 
 PowerShell:
 
-  PS> yourapp completion powershell | Out-String | Invoke-Expression
-  PS> yourapp completion powershell > yourapp.ps1
+  PS> mmdbio completion powershell | Out-String | Invoke-Expression
+  PS> mmdbio completion powershell > mmdbio.ps1
 `,
 	DisableFlagsInUseLine: true,
-	Args:                  cobra.ExactValidArgs(1),
+	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Run: func(cmd *cobra.Command, args []string) {
 		switch args[0] {
