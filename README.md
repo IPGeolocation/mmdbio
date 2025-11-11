@@ -14,6 +14,7 @@ This documentation provides an overview and usage guide for the MMDB CLI tool. T
   - [read](#read)
   - [metadata](#metadata)
   - [export](#export)
+  - [import](#import)
   - [diff](#diff)
   - [inspect](#inspect)
   - [stats](#stats)
@@ -67,11 +68,11 @@ The tool allows working with MaxMind DB files (MMDB) for geolocation purposes, i
 
 | Platform | Architecture | File Name |
 |----------|-------------|-----------|
-| Linux    | amd64       | mmdbio-1.0.0-linux-amd64.tar.gz |
-| Linux    | arm64       | mmdbio-1.0.0-linux-arm64.tar.gz |
-| macOS    | amd64       | mmdbio-1.0.0-darwin-amd64.tar.gz |
-| macOS    | arm64       | mmdbio-1.0.0-darwin-arm64.tar.gz |
-| Windows  | amd64       | mmdbio-1.0.0-windows-amd64.zip |
+| Linux    | amd64       | mmdbio-1.1.0-linux-amd64.tar.gz |
+| Linux    | arm64       | mmdbio-1.1.0-linux-arm64.tar.gz |
+| macOS    | amd64       | mmdbio-1.1.0-darwin-amd64.tar.gz |
+| macOS    | arm64       | mmdbio-1.1.0-darwin-arm64.tar.gz |
+| Windows  | amd64       | mmdbio-1.1.0-windows-amd64.zip |
 
 ---
 
@@ -82,13 +83,13 @@ The tool allows working with MaxMind DB files (MMDB) for geolocation purposes, i
 2. Extract it to a folder in your PATH, e.g., `/usr/local/bin`:
 
 ```bash
-tar -xzf mmdbio-1.0.0-linux-amd64.tar.gz -C /usr/local/bin
+tar -xzf mmdbio-1.1.0-linux-amd64.tar.gz -C /usr/local/bin
 ```
 
 3. Rename the binary for simplicity:
 
 ```bash
-mv /usr/local/bin/mmdbio-1.0.0-linux-amd64 /usr/local/bin/mmdbio
+mv /usr/local/bin/mmdbio-1.1.0-linux-amd64 /usr/local/bin/mmdbio
 ```
 
 4. Make the binary executable:
@@ -108,13 +109,13 @@ mmdbio --help
 2. Extract to a folder in your PATH, e.g., `/usr/local/bin`:
 
 ```bash
-tar -xzf mmdbio-1.0.0-darwin-amd64.tar.gz -C /usr/local/bin
+tar -xzf mmdbio-1.1.0-darwin-amd64.tar.gz -C /usr/local/bin
 ```
 
 3. Rename the binary:
 
 ```bash
-mv /usr/local/bin/mmdbio-1.0.0-darwin-amd64 /usr/local/bin/mmdbio
+mv /usr/local/bin/mmdbio-1.1.0-darwin-amd64 /usr/local/bin/mmdbio
 ```
 
 4. Make executable:
@@ -131,7 +132,7 @@ mmdbio --help
 
 ##### 3. Windows
 1. Download the `.zip` file.
-2. Extract the `mmdbio-1.0.0-windows-amd64.exe` to a folder included in your system `PATH`.
+2. Extract the `mmdbio-1.1.0-windows-amd64.exe` to a folder included in your system `PATH`.
 3. Rename the binary to `mmdbio.exe` for convenience.
 4. Open Command Prompt and verify:
 
@@ -234,6 +235,78 @@ mmdbio export --db GeoIP2-City.mmdb --range 192.168.0.0/24,10.0.0.0/8 --out outp
 ```
 
 ---
+
+### import
+
+**Description:** Import JSON data into an MMDB file.
+
+**Sample JSON:**
+```json 
+{
+  "2.2.2.2/32": {
+    "fields": "anything"
+  }, 
+  "3.3.3.0-3.3.3.255": {
+    "fields": "anything"
+  }
+}
+```
+
+**Flags:**
+
+- `--in, -i` (required): Input JSON file path (produced by the export command).  
+- `--out, -o` (required): Output `.mmdb` file path.  
+- `--ip`: IP version to import (4 or 6). Default is `6`.  
+- `--size`: Record size for the MMDB file (`24`, `28`, or `32`). Default is `32`.  
+- `--merge`: Merge strategy for duplicate entries. Options: `none`, `toplevel`, `recurse`. Default is `none`.  
+- `--alias-6to4`: Enable IPv6 to IPv4 aliasing (for hybrid databases).  
+- `--disallow-reserved`: Skip reserved IP ranges (e.g., `127.0.0.0/8`).  
+- `--title, -t`: Title for the `.mmdb` database. Default is `Custom-ip-database`.  
+- `--description, -d`: Description for the `.mmdb` database. Default is `Custom IP Intelligence Database`.  
+
+**Usage:**
+
+```bash
+# Import IPv4 data
+mmdbio import \
+  --in ipv4_export.json \
+  --out ipv4_data.mmdb \
+  --ip 4 \
+  --size 32
+
+# Import IPv6 data
+mmdbio import \
+  --in ipv6_export.json \
+  --out ipv6_data.mmdb \
+  --ip 6
+
+# Import mixed IPv4 + IPv6 data (requires aliasing)
+mmdbio import \
+  --in all_data.json \
+  --out all.mmdb \
+  --ip 6 \
+  --alias-6to4
+
+# Import while skipping reserved IPs
+mmdbio import \
+  --in dataset.json \
+  --out filtered.mmdb \
+  --disallow-reserved
+
+# Import with custom title and description
+mmdbio import \
+  --in data.json \
+  --out custom.mmdb \
+  --title "Threat DB" \
+  --description "Custom threat intelligence database"
+```
+
+**Notes:**
+
+- The input JSON must have CIDR blocks, single IPs, or IP ranges as keys, with metadata as values.  
+- Nested maps and arrays are automatically converted into MMDB types.  
+- Duplicate ranges are handled according to the `--merge` strategy.  
+- Warnings for invalid entries are printed to `stderr`.  
 
 ### diff
 
