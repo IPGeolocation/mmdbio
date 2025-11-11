@@ -13,7 +13,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:     "mmdbio",
 	Short:   "MMDB file reader utility",
-	Version: "1.0.0",
+	Version: "1.1.0",
 	Long: `
 This application is a tool to read and manipulate MMDB files. It can be used to read IP data from an MMDB file, export all records from an MMDB file to JSON, compare two MMDB files, and verify the validity of an MMDB file.`,
 }
