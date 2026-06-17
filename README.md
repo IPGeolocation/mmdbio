@@ -26,7 +26,7 @@ This documentation provides an overview and usage guide for the MMDB CLI tool. T
 
 ## Installation
 
-### 1. Go install
+### Go install
 
 To install `mmdbio` using `go install`, run:
 
@@ -43,7 +43,7 @@ mmdbio --help
 ---
 
 
-### 2. Download and Build from Source
+### Download and Build from Source
 
 Ensure you have Go installed and set up. Clone the repository and build the CLI:
 
@@ -57,7 +57,7 @@ You can now use `./mmdbio` to run the CLI.
 
 ---
 
-### 3. Download Pre-Built Binaries
+### Download Pre-Built Binaries
 
 ##### Overview
 These are prebuilt binaries for the `mmdbio` tool. Users can download these files directly from GitHub Releases without needing to build from source.
@@ -78,7 +78,7 @@ The tool allows working with MaxMind DB files (MMDB) for geolocation purposes, i
 
 #### Installation Instructions
 
-##### 1. Linux
+##### Linux
 1. Download the `.tar.gz` file for your architecture.
 2. Extract it to a folder in your PATH, e.g., `/usr/local/bin`:
 
@@ -104,7 +104,7 @@ chmod +x /usr/local/bin/mmdbio
 mmdbio --help
 ```
 
-##### 2. macOS
+##### macOS
 1. Download the `.tar.gz` file for your architecture (amd64 or arm64).
 2. Extract to a folder in your PATH, e.g., `/usr/local/bin`:
 
@@ -130,7 +130,7 @@ chmod +x /usr/local/bin/mmdbio
 mmdbio --help
 ```
 
-##### 3. Windows
+##### Windows
 1. Download the `.zip` file.
 2. Extract the `mmdbio-1.1.0-windows-amd64.exe` to a folder included in your system `PATH`.
 3. Rename the binary to `mmdbio.exe` for convenience.
