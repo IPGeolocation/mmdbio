@@ -527,6 +527,3 @@ Run <code>mmdbio verify --db yourfile.mmdb</code>. It prints <code>valid</code> 
 
 ---
 
-## License
-
-Released under the Apache-2.0 license. See the [LICENSE](LICENSE) file for details.
