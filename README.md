@@ -524,6 +524,7 @@ Use <code>mmdbio diff --old old.mmdb --new new.mmdb</code> to see every network 
 <summary><strong>How do I check if an MMDB file is valid before deploying it?</strong></summary>
 Run <code>mmdbio verify --db yourfile.mmdb</code>. It prints <code>valid</code> or <code>invalid</code> and exits with code <code>0</code> or <code>1</code>, making it suitable for use in a CI pipeline.
 </details>
+
 ---
 
 ## License
