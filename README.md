@@ -87,7 +87,7 @@ You can now use `./mmdbio` to run the CLI.
 
 ### Download Prebuilt Binaries
 
-Prebuilt binaries are available on the GitHub Releases page, so you do not need Go installed to use the tool. Always check the Releases page for the latest version number before downloading.
+Prebuilt binaries are available on the [GitHub Releases page](https://github.com/IPGeolocation/mmdbio/releases), so you do not need Go installed to use the tool. Always check the Releases page for the latest version number before downloading.
 
 | Platform | Architecture | File Name                       |
 |----------|--------------|---------------------------------|
