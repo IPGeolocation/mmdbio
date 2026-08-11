@@ -137,11 +137,11 @@ Prebuilt binaries are available on the [GitHub Releases page](https://github.com
 
 | Platform | Architecture | File Name                       |
 |----------|--------------|---------------------------------|
-| Linux    | amd64        | mmdbio-<version>-linux-amd64.tar.gz |
-| Linux    | arm64        | mmdbio-<version>-linux-arm64.tar.gz |
-| macOS    | amd64        | mmdbio-<version>-darwin-amd64.tar.gz|
-| macOS    | arm64        | mmdbio-<version>-darwin-arm64.tar.gz|
-| Windows  | amd64        | mmdbio-<version>-windows-amd64.zip  |
+| Linux    | amd64        | `mmdbio-<version>-linux-amd64.tar.gz` |
+| Linux    | arm64        | `mmdbio-<version>-linux-arm64.tar.gz` |
+| macOS    | amd64        | `mmdbio-<version>-darwin-amd64.tar.gz`|
+| macOS    | arm64        | `mmdbio-<version>-darwin-arm64.tar.gz`|
+| Windows  | amd64        | `mmdbio-<version>-windows-amd64.zip`  |
 
 #### Linux
 
