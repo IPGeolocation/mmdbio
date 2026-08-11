@@ -1,4 +1,4 @@
-# mmdbio: MMDB and GeoIP command-line toolkit
+# mmdbio: MMDB command-line toolkit
 
 mmdbio is a fast command-line tool for reading, querying, converting, comparing, inspecting, and validating MMDB files. MMDB is the compact binary database format used for offline IP geolocation, GeoIP, and IP intelligence lookups. mmdbio is built for developers who work with IP geolocation databases, threat intelligence feeds, or any dataset stored in the MMDB format, and who need a quick way to look up IP addresses, convert data to and from JSON, validate a build, and audit changes without writing custom code.
 
