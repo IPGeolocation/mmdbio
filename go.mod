@@ -1,6 +1,6 @@
 module github.com/IPGeolocation/mmdbio
 
-go 1.24.5
+go 1.25.0
 
 require (
 	github.com/oschwald/maxminddb-golang v1.13.1
@@ -14,5 +14,5 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 )
