@@ -21,7 +21,7 @@ You can use mmdbio with any MMDB file, including the IP geolocation and IP intel
 - [Commands](#commands)
   - [read: look up IP data in an MMDB file](#read-look-up-ip-data-in-an-mmdb-file)
   - [metadata: show MMDB metadata](#metadata-show-mmdb-metadata)
-  - [export: convert an MMDB file to JSON](#export-convert-an-mmdb-file-to-json)
+  - [export: convert an MMDB file to JSON or a CIDR list](#export-convert-an-mmdb-file-to-json-or-a-cidr-list)
   - [import: build an MMDB database from JSON](#import-build-an-mmdb-database-from-json)
   - [diff: compare two MMDB files](#diff-compare-two-mmdb-files)
   - [inspect: discover an MMDB schema](#inspect-discover-an-mmdb-schema)
@@ -29,6 +29,12 @@ You can use mmdbio with any MMDB file, including the IP geolocation and IP intel
   - [verify: validate an MMDB file](#verify-validate-an-mmdb-file)
   - [completion: shell completion scripts](#completion-shell-completion-scripts)
 - [Field Paths and Schemas](#field-paths-and-schemas)
+- [Using CIDR Lists](#using-cidr-lists)
+  - [Firewalls](#firewalls)
+  - [Web servers and proxies](#web-servers-and-proxies)
+  - [Mail servers](#mail-servers)
+  - [Intrusion detection](#intrusion-detection)
+  - [Cloud WAFs](#cloud-wafs)
 - [Automation and CI](#automation-and-ci)
 - [Use Cases](#use-cases)
 - [Frequently Asked Questions](#frequently-asked-questions)
@@ -44,7 +50,7 @@ You can use mmdbio with any MMDB file, including the IP geolocation and IP intel
 Install the CLI, then look up an IP address in any MMDB file:
 
 ```bash
-# Install (requires Go 1.24.5 or newer)
+# Install (requires Go 1.25 or newer)
 go install github.com/IPGeolocation/mmdbio@latest
 
 # Look up a single IP in your .mmdb file
@@ -89,7 +95,7 @@ The format is widely used across GeoIP, IP geolocation, and network intelligence
 
 - Look up IP addresses from any MMDB file: one IP at a time, in bulk from a file, or across an entire CIDR range.
 - Convert JSON datasets into production-ready MMDB files with `import`.
-- Convert any MMDB file back to JSON for auditing, backups, or migration with `export`.
+- Convert any MMDB file back to JSON for auditing, backups, or migration with `export`, or export the networks that match a filter, such as a country or VPN flag, as a CIDR list for firewalls and WAFs.
 - Track schema and data changes between two builds of a database with `diff`.
 - Validate an MMDB file before you deploy it with `verify`, which returns a non-zero exit code on failure so it works in CI.
 - Discover the schema of an unfamiliar MMDB file with `inspect`.
@@ -348,15 +354,21 @@ Description: {
   }
 ```
 
-### export: convert an MMDB file to JSON
+### export: convert an MMDB file to JSON or a CIDR list
 
-Export every record from an MMDB file to JSON. Supports optional field selection and CIDR range filtering. This is the reverse of `import` and is useful for auditing, backups, migration, or converting an MMDB file to JSON for another tool.
+Export records from an MMDB file to JSON, or export just the matching networks as a plain CIDR list for firewalls, proxies, and WAF IP sets. Supports field selection, value filters, address family filters, and CIDR range filtering. JSON export is the reverse of `import` and is useful for auditing, backups, migration, or converting an MMDB file to JSON for another tool.
+
+In IPv6 databases the IPv4 data also appears at `::ffff:0:0/96`, `2001::/32` (Teredo), and `2002::/16` (6to4). `export` skips those copies, so each IPv4 network is exported once, as IPv4.
 
 **Flags:**
 
 - `--db` (required): path to the `.mmdb` file.
-- `--out` (required): path to the output JSON file.
-- `--fields`: comma-separated list of dotted field paths to extract.
+- `--out` (required): path to the output file, or `-` to write to stdout. With `-`, the summary line goes to stderr.
+- `--format`: `json` (default) or `cidr`. `cidr` writes one network per line, which most firewalls and proxies can load directly.
+- `--fields`: comma-separated list of dotted field paths to extract. JSON only.
+- `--where`: only export networks whose record matches, written as `field<op>value`. Repeat the flag to add conditions; all of them must match. See [filtering by value](#filtering-by-value).
+- `--family`: `4` or `6` to export only IPv4 or only IPv6 networks.
+- `--aggregate`: with `--format cidr`, merge adjacent networks into the fewest CIDRs. On by default; pass `--aggregate=false` to keep each network as it is stored. See [merging adjacent networks](#merging-adjacent-networks).
 - `--range`: optional comma-separated list of CIDR ranges. Only networks that fall within these ranges are exported. This differs from `read --range`, which accepts a single CIDR.
 
 **Export the entire database:**
@@ -431,6 +443,190 @@ mmdbio export --db ip-to-city.mmdb --fields location.country.name,location.city.
 ```bash
 mmdbio export --db ip-to-city.mmdb --range 8.8.8.0/24,9.9.9.0/24 --out output.json
 ```
+
+#### Filtering by value
+
+`--where` takes a dotted field path, an operator, and a value:
+
+| Operator | Meaning | Example |
+|---|---|---|
+| `=` | equals any of the comma-separated values | `--where location.country.code2=DE,FR` |
+| `!=` | equals none of the values | `--where is_vpn!=true` |
+| `>=` `<=` `>` `<` | numeric comparison | `--where threat_score>=80` |
+
+- Comparisons with `=` and `!=` ignore case, so `de` matches `DE`. Numbers and booleans are compared by their text, so `--where asn.as_number=13335` and `--where is_tor=true` work whether the file stores them as numbers or strings.
+- When the field is an array, such as `vpn_provider_names`, `=` matches if any element matches.
+- Numeric operators also accept numeric strings, such as coordinates stored as text.
+- A record that does not have the field never matches, not even with `!=`.
+- `--where` works with both formats. With `--format json` it narrows the records that are written.
+
+Field paths depend on the database. Run `inspect` to see which ones a file has.
+
+The examples below were run against IPGeolocation.io databases: `db-ip-security.mmdb` from the weekly Security database and `db-ip-country.mmdb` from the weekly Country database.
+
+**Export the IPv4 networks of VPN exits as a CIDR list:**
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_vpn=true --family 4 --format cidr --out vpn-v4.txt
+```
+
+```bash
+Exported 2353364 networks as 1929272 CIDRs to vpn-v4.txt
+```
+
+`vpn-v4.txt`:
+
+```text
+1.0.19.98/32
+1.0.19.240/32
+1.0.20.14/32
+...
+```
+
+**Export every network in two countries:**
+
+```bash
+mmdbio export --db db-ip-country.mmdb --where location.country.code2=CN,RU --format cidr --out cn-ru.txt
+```
+
+```bash
+Exported 61365 networks as 60988 CIDRs to cn-ru.txt
+```
+
+Without `--family`, the file has IPv4 networks first, then IPv6:
+
+```text
+1.0.1.0/24
+1.0.2.0/23
+1.0.8.0/21
+...
+2001:218:2001::1:0/112
+2001:218:2001:0:1000::/111
+2001:218:2001:0:2000::/112
+...
+```
+
+**Export one IP family:**
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_tor=true --family 6 --format cidr --out tor-v6.txt
+```
+
+```bash
+Exported 4211 networks as 4207 CIDRs to tor-v6.txt
+```
+
+```text
+2001:418:8006::9/128
+2001:470:1:908::9001/128
+2001:470:b:a5::beef/128
+...
+```
+
+**Match an element of an array field:**
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where 'vpn_provider_names=Nord VPN' --format cidr --out nordvpn.txt
+```
+
+```bash
+Exported 35731 networks as 27053 CIDRs to nordvpn.txt
+```
+
+```text
+2.56.188.48/32
+2.56.188.51/32
+2.56.188.59/32
+...
+```
+
+Quote a condition that contains spaces.
+
+**Combine conditions:**
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_proxy=true --where 'threat_score>=80' --format cidr --out risky.txt
+```
+
+```bash
+Exported 40066 networks as 32745 CIDRs to risky.txt
+```
+
+```text
+1.14.217.36/32
+1.15.236.43/32
+1.32.216.218/32
+...
+```
+
+Quote conditions that contain `>` or `<` so the shell does not treat them as redirects.
+
+**Filter a JSON export:**
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_tor=true --family 4 --fields is_tor,threat_score --out tor.json
+```
+
+```bash
+Exported 15072 records to tor.json
+```
+
+```json
+{
+  "1.1.168.51/32": {
+    "is_tor": "true",
+    "threat_score": 45
+  },
+  "1.161.141.236/32": {
+    "is_tor": "true",
+    "threat_score": 45
+  },
+  ...
+}
+```
+
+**Write to stdout and pipe into another tool:**
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_tor=true --format cidr --out - | wc -l
+```
+
+```bash
+Exported 19283 networks as 18989 CIDRs to stdout
+18989
+```
+
+With `--out -`, the summary line goes to stderr, so only the CIDRs reach the pipe.
+
+#### Merging adjacent networks
+
+An MMDB file often splits one block into many networks because their records differ. In a city database, for example, each city in a country has its own networks. When neighbouring networks all match your filter, `--format cidr` joins them into the fewest CIDRs that cover exactly the same addresses. The list never gets longer, and it is often much shorter, which matters for limits such as 10,000 CIDRs per AWS WAF IP set, 10,000 items per Cloudflare list, or 65,536 entries in a default ipset.
+
+Measured on IPGeolocation.io weekly databases:
+
+| Filter | Database | Networks | CIDRs after merging |
+|---|---|---|---|
+| `location.country.code2=DE`, IPv4 | City | 681,795 | 91,192 |
+| `asn=16509` | ISP | 44,821 | 7,723 |
+| `is_cloud_provider=true`, IPv4 | Security | 6,666,391 | 108,242 |
+| `is_vpn=true`, IPv4 | Security | 2,353,364 | 1,929,272 |
+| `location.country.code2=DE`, IPv4 | Country | 90,978 | 90,978 |
+
+When neighbouring networks already share a record, such as one country in a country database, they are already stored as a single network and there is nothing left to merge.
+
+Pass `--aggregate=false` to write each network exactly as it is stored in the database, for example when you want to look lines up again with `read`:
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_vpn=true --family 4 --format cidr --aggregate=false --out vpn-v4.txt
+```
+
+```bash
+Exported 2353364 CIDRs to vpn-v4.txt
+```
+
+Merged prefixes can be shorter than the networks in the file, for example a /8. Some services set a minimum prefix length, such as /8 for IPv4 on Cloudflare, and AWS WAF does not accept /0.
+
+To load a CIDR list into a firewall, web server, proxy, mail server, or IDS, see [Using CIDR Lists](#using-cidr-lists).
 
 ### import: build an MMDB database from JSON
 
@@ -783,6 +979,267 @@ When you build a database with `import`, you choose the schema yourself through 
 
 ---
 
+## Using CIDR Lists
+
+`export --format cidr` writes canonical CIDRs, one per line, which many tools load directly or after a one-line transformation. Every tool example below was run against the version shown, with lists exported from IPGeolocation.io databases.
+
+A few things apply to most of them:
+
+- Firewalls keep IPv4 and IPv6 in separate sets, so export each family with `--family 4` and `--family 6`. Web servers, proxies, Postfix, and the IDS tools accept a mixed file.
+- Re-run the export when you update the database, then reload the tool.
+- The examples block or flag the listed addresses. To allow only the listed addresses instead, invert the rule.
+
+### Firewalls
+
+**nftables** (tested with nftables 1.1.3):
+
+```bash
+mmdbio export --db db-ip-country.mmdb --where location.country.code2=DE --family 4 --format cidr --out de-v4.txt
+{ echo 'add element inet filter de_v4 {'; paste -sd, de-v4.txt; echo '}'; } > de-v4.nft
+nft add table inet filter
+nft add set inet filter de_v4 '{ type ipv4_addr; flags interval; auto-merge; }'
+nft -f de-v4.nft
+nft add chain inet filter input '{ type filter hook input priority 0; }'
+nft add rule inet filter input ip saddr @de_v4 drop
+```
+
+`auto-merge` is optional. With it, nftables stores adjacent networks as ranges: the 90,978 German CIDRs above become 55,254 set elements. Without `auto-merge`, a list loads as is, because exported networks never overlap.
+
+**ipset and iptables** (tested with ipset 7.22). A `hash:net` set holds 65,536 entries by default. Larger lists fail with `Hash is full, cannot add more elements`, so raise `maxelem`:
+
+```bash
+ipset create de_v4 hash:net family inet maxelem 131072
+sed 's/^/add de_v4 /' de-v4.txt | ipset restore
+ipset list de_v4 -t | grep entries
+iptables -I INPUT -m set --match-set de_v4 src -j DROP
+```
+
+```text
+Number of entries: 90978
+```
+
+Use `family inet6` and `ip6tables` for an IPv6 list.
+
+**firewalld** (tested with firewalld 2.3.1). firewalld reads the file directly:
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_tor=true --family 4 --format cidr --out tor-v4.txt
+mmdbio export --db db-ip-security.mmdb --where is_tor=true --family 6 --format cidr --out tor-v6.txt
+firewall-cmd --permanent --new-ipset=tor-v4 --type=hash:net --option=family=inet --option=maxelem=131072
+firewall-cmd --permanent --ipset=tor-v4 --add-entries-from-file=tor-v4.txt
+firewall-cmd --permanent --new-ipset=tor-v6 --type=hash:net --option=family=inet6 --option=maxelem=131072
+firewall-cmd --permanent --ipset=tor-v6 --add-entries-from-file=tor-v6.txt
+firewall-cmd --permanent --zone=drop --add-source=ipset:tor-v4
+firewall-cmd --permanent --zone=drop --add-source=ipset:tor-v6
+firewall-cmd --reload
+firewall-cmd --zone=drop --list-sources
+```
+
+```text
+ipset:tor-v4 ipset:tor-v6
+```
+
+### Web Servers and Proxies
+
+The examples use the CN and RU list from [Filtering by value](#filtering-by-value), which mixes IPv4 and IPv6. Each was checked by sending requests from a listed IPv4 address, a listed IPv6 address, and two unlisted ones.
+
+**nginx** (tested with nginx 1.29). The `geo` module reads `CIDR value;` lines:
+
+```bash
+sed 's/$/ 1;/' cn-ru.txt > /etc/nginx/cn-ru.conf
+```
+
+```nginx
+# in the http block
+geo $blocked_country {
+    default 0;
+    include /etc/nginx/cn-ru.conf;
+}
+
+server {
+    listen 80;
+    if ($blocked_country) {
+        return 403;
+    }
+    # ...
+}
+```
+
+`geo` matches `$remote_addr`. Behind a load balancer, set the client address with the `realip` module first.
+
+**Apache httpd** (tested with Apache 2.4). `Require not ip` accepts several networks per line, so group the list into lines of 100:
+
+```bash
+xargs -n 100 < cn-ru.txt | sed 's/^/Require not ip /' > /usr/local/apache2/conf/cn-ru-deny.conf
+```
+
+```apache
+<Location "/">
+    <RequireAll>
+        Require all granted
+        Include conf/cn-ru-deny.conf
+    </RequireAll>
+</Location>
+```
+
+Behind a proxy, use `mod_remoteip` so Apache sees the client address.
+
+**Caddy** (tested with Caddy 2.11). Matchers cannot read a file, so generate a snippet and import it:
+
+```bash
+{ printf '@blocked_countries client_ip '; paste -sd' ' cn-ru.txt; } > /etc/caddy/cn-ru.caddy
+```
+
+```caddy
+example.com {
+	import cn-ru.caddy
+	respond @blocked_countries 403
+	# ...
+}
+```
+
+`client_ip` is the connection address unless you configure `trusted_proxies`, in which case it is the address from the forwarding header.
+
+**HAProxy** (tested with HAProxy 3.2). An ACL file loads as is:
+
+```haproxy
+frontend fe
+    bind :80
+    acl blocked src -f /etc/haproxy/cn-ru.txt
+    http-request deny if blocked
+```
+
+**Traefik** (tested with Traefik 3.5). Traefik has an allow list but no deny list, so this example allows only German addresses. Generate a file provider middleware:
+
+```bash
+mmdbio export --db db-ip-country.mmdb --where location.country.code2=DE --format cidr --out de.txt
+{
+  echo 'http:'
+  echo '  middlewares:'
+  echo '    de-only:'
+  echo '      ipAllowList:'
+  echo '        sourceRange:'
+  sed 's/.*/          - "&"/' de.txt
+} > /etc/traefik/dynamic/de-only.yml
+```
+
+```yaml
+http:
+  middlewares:
+    de-only:
+      ipAllowList:
+        sourceRange:
+          - "1.178.10.0/24"
+          - "1.178.198.62/31"
+          ...
+```
+
+Attach `de-only` to a router with `middlewares: [de-only]`. Other addresses get `403 Forbidden`. Behind a proxy, add `ipStrategy` to the middleware.
+
+**Squid** (tested with Squid 6.13). A `src` ACL reads the file as is. Put the deny before your allow rules:
+
+```squid
+acl blocked_countries src "/etc/squid/cn-ru.txt"
+http_access deny blocked_countries
+```
+
+Listed clients get `403 Forbidden` with `X-Squid-Error: ERR_ACCESS_DENIED`.
+
+### Mail Servers
+
+**Postfix** (tested with Postfix 3.10). A `cidr:` table maps each network to an action and needs no `postmap` build step:
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_proxy=true --where 'threat_score>=80' --format cidr --out risky.txt
+sed 's/$/ REJECT/' risky.txt > /etc/postfix/risky.cidr
+postconf -e 'smtpd_client_restrictions = check_client_access cidr:/etc/postfix/risky.cidr'
+postfix reload
+```
+
+Check an address against the table:
+
+```bash
+postmap -q 1.14.217.36 cidr:/etc/postfix/risky.cidr
+```
+
+```text
+REJECT
+```
+
+Postfix requires zero host bits in every network, which `export` always produces.
+
+### Intrusion Detection
+
+**Suricata** (tested with Suricata 8.0). IP reputation files take `network,category,score` lines:
+
+```bash
+mmdbio export --db db-ip-security.mmdb --where is_tor=true --format cidr --out tor.txt
+echo '1,tor,Tor exit nodes' > /etc/suricata/iprep/categories.txt
+sed 's/$/,1,100/' tor.txt > /etc/suricata/iprep/tor.list
+```
+
+In `suricata.yaml`:
+
+```yaml
+reputation-categories-file: /etc/suricata/iprep/categories.txt
+default-reputation-path: /etc/suricata/iprep
+reputation-files:
+  - tor.list
+```
+
+A rule that alerts on traffic from the list:
+
+```text
+alert ip any any -> any any (msg:"Traffic from a Tor exit node"; iprep:src,tor,>,50; sid:1000001; rev:1;)
+```
+
+`fast.log` for a test capture with one listed and one unlisted source:
+
+```text
+09/21/2026-14:13:20.000000  [**] [1:1000001:1] Traffic from a Tor exit node [**] [Classification: (null)] [Priority: 3] {UDP} 1.1.168.51:40000 -> 192.0.2.10:53
+```
+
+**Zeek** (tested with Zeek 9.0). The Intel framework matches networks with `Intel::SUBNET`. Fields are separated by tabs:
+
+```bash
+{ printf '#fields\tindicator\tindicator_type\tmeta.source\n'; sed 's/$/\tIntel::SUBNET\ttor-exits/' tor.txt; } > /usr/local/zeek/share/zeek/site/tor.intel
+```
+
+In `local.zeek`:
+
+```zeek
+@load frameworks/intel/seen
+redef Intel::read_files += { "/usr/local/zeek/share/zeek/site/tor.intel" };
+```
+
+Connections from a listed address appear in `intel.log` with `seen.where` set to `Conn::IN_ORIG` and `sources` set to `tor-exits`.
+
+### Cloud WAFs
+
+Cloud WAFs cap how many entries a list holds, so filter tightly and keep merging on:
+
+| Service | Limit | Notes |
+|---|---|---|
+| [AWS WAF IP sets](https://docs.aws.amazon.com/waf/latest/developerguide/limits.html) | 10,000 CIDRs per IP set | One IP version per set. /0 is not accepted. |
+| [Cloudflare Lists](https://developers.cloudflare.com/waf/tools/lists/) | 10,000 items across all lists on Free, Pro, and Business | IPv4 /8 to /32, IPv6 /12 to /128. |
+| [Azure Front Door WAF](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits) | 600 IP ranges per custom rule | |
+
+When a list is still too long, split it into files of at most 10,000 lines, one per IP set:
+
+```bash
+split -l 10000 -d --additional-suffix=.txt nordvpn.txt nordvpn-part-
+wc -l nordvpn-part-*.txt
+```
+
+```text
+ 10000 nordvpn-part-00.txt
+ 10000 nordvpn-part-01.txt
+  7053 nordvpn-part-02.txt
+ 27053 total
+```
+
+---
+
 ## Automation and CI
 
 Two commands are built for pipelines: `verify` gates on validity through its exit code, and `diff` reports what changed between builds.
@@ -832,6 +1289,9 @@ fi
 - **Auditing database releases before deployment.** Use `diff` to see exactly what changed between two builds, and `verify` to confirm the new build is not corrupted before you ship it.
 - **Exploring an unfamiliar MMDB file.** Use `inspect` and `metadata` to understand the schema and structure of a file you did not build.
 - **Converting between MMDB and JSON.** Use `export` to pull a database out to JSON, edit or transform it, then `import` it back into a new MMDB file.
+- **Building firewall and WAF blocklists.** Use `export --where ... --format cidr` to turn a country, ASN, VPN, Tor, or threat score filter into a CIDR list for nftables, ipset, firewalld, or a cloud WAF IP set.
+- **Blocking or restricting access at the web server or proxy.** Load the same lists into nginx, Apache, Caddy, HAProxy, Traefik, or Squid.
+- **Filtering mail and flagging traffic.** Reject SMTP clients from risky networks with a Postfix `cidr:` table, or alert on them in Suricata and Zeek.
 
 ---
 
@@ -849,7 +1309,12 @@ Run <code>mmdbio read --db yourfile.mmdb --ip 8.8.8.8</code> to look up a single
 
 <details>
 <summary><strong>How do I convert an MMDB file to JSON?</strong></summary>
-Use <code>mmdbio export --db yourfile.mmdb --out output.json</code>. Add <code>--fields</code> to export only selected field paths, or <code>--range</code> to export only certain networks.
+Use <code>mmdbio export --db yourfile.mmdb --out output.json</code>. Add <code>--fields</code> to export only selected field paths, <code>--where</code> to export only records that match a value, or <code>--range</code> to export only certain networks.
+</details>
+
+<details>
+<summary><strong>How do I export all IP ranges for a country, ASN, or VPN flag?</strong></summary>
+Use <code>--where</code> with <code>--format cidr</code>, for example <code>mmdbio export --db yourfile.mmdb --where location.country.code2=DE --family 4 --format cidr --out de-v4.txt</code>. The file has one CIDR per line. Run <code>inspect</code> first to find the field paths your database uses.
 </details>
 
 <details>
