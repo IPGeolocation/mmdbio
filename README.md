@@ -600,7 +600,7 @@ With `--out -`, the summary line goes to stderr, so only the CIDRs reach the pip
 
 #### Merging adjacent networks
 
-An MMDB file often splits one block into many networks because their records differ. In a city database, for example, each city in a country has its own networks. When neighbouring networks all match your filter, `--format cidr` joins them into the fewest CIDRs that cover exactly the same addresses. The list never gets longer, and it is often much shorter, which matters for limits such as 10,000 CIDRs per AWS WAF IP set, 10,000 items per Cloudflare list, or 65,536 entries in a default ipset.
+An MMDB file often splits one block into many networks because their records differ. In a city database, for example, each city in a country has its own networks. When neighboring networks all match your filter, `--format cidr` joins them into the fewest CIDRs that cover exactly the same addresses. The list never gets longer, and it is often much shorter, which matters for limits such as 10,000 CIDRs per AWS WAF IP set, 10,000 items per Cloudflare list, or 65,536 entries in a default ipset.
 
 Measured on IPGeolocation.io weekly databases:
 
@@ -612,7 +612,7 @@ Measured on IPGeolocation.io weekly databases:
 | `is_vpn=true`, IPv4 | Security | 2,353,364 | 1,929,272 |
 | `location.country.code2=DE`, IPv4 | Country | 90,978 | 90,978 |
 
-When neighbouring networks already share a record, such as one country in a country database, they are already stored as a single network and there is nothing left to merge.
+When neighboring networks already share a record, such as one country in a country database, they are already stored as a single network and there is nothing left to merge.
 
 Pass `--aggregate=false` to write each network exactly as it is stored in the database, for example when you want to look lines up again with `read`:
 
