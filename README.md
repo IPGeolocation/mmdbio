@@ -130,7 +130,7 @@ GOPROXY=direct go install github.com/IPGeolocation/mmdbio@latest
 Ensure you have Go installed and set up. Clone the repository and build the CLI:
 
 ```bash
-git clone github.com/IPGeolocation/mmdbio.git
+git clone https://github.com/IPGeolocation/mmdbio.git
 cd mmdbio
 go build -o mmdbio .
 ```
@@ -452,13 +452,14 @@ mmdbio export --db ip-to-city.mmdb --range 8.8.8.0/24,9.9.9.0/24 --out output.js
 |---|---|---|
 | `=` | equals any of the comma-separated values | `--where location.country.code2=DE,FR` |
 | `!=` | equals none of the values | `--where is_vpn!=true` |
-| `>=` `<=` `>` `<` | numeric comparison | `--where threat_score>=80` |
+| `>=` `<=` `>` `<` | numeric comparison | `--where 'threat_score>=80'` |
 
 - Comparisons with `=` and `!=` ignore case, so `de` matches `DE`. Numbers and booleans are compared by their text, so `--where asn.as_number=13335` and `--where is_tor=true` work whether the file stores them as numbers or strings.
 - When the field is an array, such as `vpn_provider_names`, `=` matches if any element matches.
 - Numeric operators also accept numeric strings, such as coordinates stored as text.
 - A record that does not have the field never matches, not even with `!=`.
 - `--where` works with both formats. With `--format json` it narrows the records that are written.
+- Quote the condition when it uses `>`, `<` or spaces, for example `--where 'threat_score>=80'`. Unquoted, the shell treats `>` and `<` as redirection and the filter never reaches mmdbio.
 
 Field paths depend on the database. Run `inspect` to see which ones a file has.
 
