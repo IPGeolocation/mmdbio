@@ -1,0 +1,16 @@
+{
+  "build_epoch": "2026-11-06T15:52:18Z",
+  "database_type": "Demo-City-DB",
+  "description": {
+    "en": "Demo IP to City database"
+  },
+  "ip_version": 4,
+  "ipv4_count": 3,
+  "ipv6_count": 0,
+  "languages": [
+    "en"
+  ],
+  "networks": 3,
+  "node_count": 59,
+  "record_size": 32
+}
