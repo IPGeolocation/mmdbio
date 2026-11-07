@@ -1,0 +1,122 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make all lib
+      - name: Test
+        run: make test
+      - name: Test under AddressSanitizer and UBSan
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          make BUILD=build-asan CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wno-format-truncation -Wno-format-overflow" LDFLAGS="-fsanitize=address,undefined"
+          sh tests/run_tests.sh build-asan/mmdbio
+
+  cross:
+    # linux-386, linux-arm64 and linux-armv7 (under qemu), windows-amd64 and
+    # windows-386 (under wine): build-release.sh builds and tests each
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the cross toolchains, qemu and wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-14-i686-linux-gnu gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf clang llvm \
+            qemu-user gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 wine wine32:i386 wine64 rpm
+      - name: Build and test every target
+        env:
+          CC32: i686-linux-gnu-gcc-14
+        run: sh build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cross-builds
+          path: dist/*
+
+  windows-native:
+    # the cross-built Windows binaries on a real Windows machine
+    needs: cross
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cross-builds
+          path: dist
+      - name: Smoke test, 64-bit and 32-bit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($a in 'amd64', '386') {
+            $z = Get-ChildItem dist -Filter "mmdbio-*-windows-$a.zip" | Select-Object -First 1
+            Expand-Archive $z.FullName -DestinationPath "w-$a" -Force
+            $bin = (Get-ChildItem "w-$a" -Directory | Select-Object -First 1).FullName
+            & "$bin\mmdbio.exe" --version
+            & "$bin\mmdbio.exe" import tests\data\city_data.json "city-$a.mmdb" --ip 4 -q
+            & "$bin\mmdbio.exe" read 8.8.8.8 "city-$a.mmdb"
+            & "$bin\mmdbio.exe" read 8.8.8.0/30 "city-$a.mmdb" -f csv
+            & "$bin\mmdbio.exe" verify "city-$a.mmdb"
+            & "$bin\mmdbio.exe" export "city-$a.mmdb" "city-$a.csv"
+            & "$bin\mmdbio.exe" import "city-$a.csv" "city2-$a.mmdb" -q
+            & "$bin\mmdbio.exe" shrink "city-$a.mmdb" --lookups 10000 --full-check
+            & "$bin\mmdbio.exe" diff "city-$a.mmdb" "city-$a.shrunk.mmdb" -s -r --summary
+          }
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          prepare: pkg install -y gmake python3
+          run: gmake all lib && gmake test
+
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: pkg_add -I gmake python%3
+          run: gmake all lib && gmake test
+
+  netbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          prepare: /usr/sbin/pkg_add gmake python312
+          run: gmake all lib && gmake test PYTHON=python3.12
+
+  dragonflybsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          prepare: pkg install -y gmake python3
+          run: gmake all lib && gmake test
+
+  illumos:
+    # OmniOS; Solaris-family support is best effort
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/omnios-vm@v1
+        with:
+          prepare: pkg install developer/gcc14 developer/build/gnu-make runtime/python-312
+          run: gmake CC=gcc all lib && gmake CC=gcc test
