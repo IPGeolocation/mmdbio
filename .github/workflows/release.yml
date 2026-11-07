@@ -1,0 +1,113 @@
+name: release
+
+# Pushing a tag v<version> (matching MMDBIO_VERSION in src/cmds.h) builds,
+# tests and publishes every release file with one SHA256SUMS.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # linux amd64, 386, arm64 and armv7, windows amd64 and 386, .deb and .rpm
+          - os: ubuntu-24.04
+            prepare: >-
+              sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install -y
+              gcc-14-i686-linux-gnu gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf clang llvm qemu-user
+              gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 wine wine32:i386 wine64 rpm
+            cc32: i686-linux-gnu-gcc-14
+          - os: macos-latest    # darwin-arm64
+          - os: macos-13        # darwin-amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        if: matrix.prepare
+        run: ${{ matrix.prepare }}
+      - name: Build and test
+        env:
+          CC32: ${{ matrix.cc32 }}
+          DEB_MAINTAINER: ${{ vars.DEB_MAINTAINER }}
+        run: |
+          [ -n "$CC32" ] || unset CC32
+          sh build-release.sh
+          mv dist/SHA256SUMS "dist/SHA256SUMS.${{ matrix.os }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/*
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          prepare: pkg install -y gmake python3
+          run: sh build-release.sh && mv dist/SHA256SUMS dist/SHA256SUMS.freebsd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-freebsd
+          path: dist/*
+
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: pkg_add -I gmake python%3
+          run: sh build-release.sh && mv dist/SHA256SUMS dist/SHA256SUMS.openbsd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-openbsd
+          path: dist/*
+
+  netbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          prepare: /usr/sbin/pkg_add gmake python312
+          run: PYTHON=python3.12 sh build-release.sh && mv dist/SHA256SUMS dist/SHA256SUMS.netbsd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-netbsd
+          path: dist/*
+
+  dragonflybsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          prepare: pkg install -y gmake python3
+          run: sh build-release.sh && mv dist/SHA256SUMS dist/SHA256SUMS.dragonflybsd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-dragonflybsd
+          path: dist/*
+
+  publish:
+    needs: [build, freebsd, openbsd, netbsd, dragonflybsd]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: One SHA256SUMS
+        run: |
+          cd dist
+          cat SHA256SUMS.* | sort -k2 > SHA256SUMS
+          rm SHA256SUMS.*
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
