@@ -1,0 +1,8 @@
+build/
+build-*/
+dist/
+*.mmdb
+*.mmdb.tmp
+__pycache__/
+.idea/
+.vscode/
