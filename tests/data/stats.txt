@@ -1,0 +1,14 @@
+=====MMDB Statistics========
+────────────────────────────────────────────
+Database Type: Demo-City-DB
+Description:   Demo IP to City database
+IP Version:    4
+Record Size:   32 bits
+Node Count:    59
+Build Epoch:   2026-11-06T15:52:18Z
+Languages:     [en]
+────────────────────────────────────────────
+IPv4 Count:    3
+IPv6 Count:    0
+Networks:      3
+────────────────────────────────────────────

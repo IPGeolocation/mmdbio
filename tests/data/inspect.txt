@@ -1,0 +1,8 @@
+📂 Structure for MMDB: ip-to-city.mmdb
+────────────────────────────────────────────
+location.city.name                                 : string
+location.continent.name                            : string
+location.country.iso_code                          : string
+location.country.name                              : string
+location.latitude                                  : float64
+location.longitude                                 : float64
