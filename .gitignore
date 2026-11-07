@@ -1,8 +1,0 @@
-# Build artifacts
-dist/
-*.exe
-*.tar.gz
-*.zip
-*.mmdb
-*.txt
-*.json
