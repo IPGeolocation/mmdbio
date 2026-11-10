@@ -1,0 +1,36 @@
+{
+  "_comment": "Every key is optional except an input (here or --in). Paths are relative to this file. Flags given on the command line override these settings.",
+  "input": {
+    "path": "ip-security.csv.gz",
+    "format": "csv",
+    "delimiter": ",",
+    "header": true,
+    "lazy_quotes": false
+  },
+  "output": "ip-security.mmdb",
+  "network": {"start_column": "start_ip", "end_column": "end_ip"},
+  "metadata": {
+    "database_type": "IP-Security",
+    "description": {"en": "IP security data"},
+    "languages": ["en"],
+    "ip_version": 6,
+    "record_size": "auto"
+  },
+  "tree": {"alias_ipv4": true, "include_reserved": true},
+  "merge": "replace",
+  "on_error": "skip",
+  "fields": {
+    "exclude": ["internal_note"],
+    "types": {
+      "threat_score": "uint16",
+      "is_proxy": "boolean",
+      "proxy_provider_names": "array"
+    },
+    "infer_types": false,
+    "nest_keys": false,
+    "empty": "keep",
+    "array_separator": ","
+  },
+  "temp_dir": "/tmp",
+  "memory_mb": 512
+}
