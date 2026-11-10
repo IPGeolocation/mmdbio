@@ -334,6 +334,7 @@ static int source_next(source *s, entry *out, bool *ok)
 typedef struct {
 	entry *buf;
 	size_t n, cap;
+	size_t max; /* entries the --memory budget holds; buf grows toward it */
 	const char *tmp;
 	int fd;
 	bwriter w;
@@ -372,8 +373,20 @@ static int runs_spill(runset *rs)
 
 static int runs_push(runset *rs, u128 start, u128 end, uint64_t seq, uint32_t rec)
 {
-	if (rs->n == rs->cap && runs_spill(rs) < 0)
-		return -1;
+	if (rs->n == rs->cap) {
+		/* a small input never takes the whole budget; a budget the address
+		 * space can't give (a 32-bit process) spills to disk sooner */
+		size_t want = rs->cap * 2 < rs->max ? rs->cap * 2 : rs->max;
+		entry *b = want > rs->cap ? realloc(rs->buf, want * sizeof *b) : NULL;
+		if (b) {
+			rs->buf = b;
+			rs->cap = want;
+		} else {
+			rs->max = rs->cap;
+			if (runs_spill(rs) < 0)
+				return -1;
+		}
+	}
 	rs->buf[rs->n++] = (entry){start, end, seq, rec};
 	return 0;
 }
@@ -983,9 +996,10 @@ int build_mmdb(build_opts *o)
 	columns_init(&gap_keys, false);
 	const char *tmp = o->tmp_dir && *o->tmp_dir ? o->tmp_dir : temp_dir();
 	runset rs = {.tmp = tmp, .fd = -1};
-	rs.cap = o->memory / sizeof(entry);
-	if (rs.cap < 1024)
-		rs.cap = 1024;
+	rs.max = o->memory / sizeof(entry);
+	if (rs.max < 1024)
+		rs.max = 1024;
+	rs.cap = rs.max < 4096 ? rs.max : 4096;
 	source src;
 	memset(&src, 0, sizeof src);
 	uint64_t rows = 0, inserted = 0, skipped = 0, shown = 0, clipped = 0, ruled_out = 0;
