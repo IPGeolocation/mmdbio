@@ -1,0 +1,50 @@
+{
+  "1.1.1.0/24": {
+    "location": {
+      "city": {
+        "name": "Sydney"
+      },
+      "continent": {
+        "name": "Oceania"
+      },
+      "country": {
+        "iso_code": "AU",
+        "name": "Australia"
+      },
+      "latitude": -33.8688,
+      "longitude": 151.2093
+    }
+  },
+  "8.8.8.0/24": {
+    "location": {
+      "city": {
+        "name": "Mountain View"
+      },
+      "continent": {
+        "name": "North America"
+      },
+      "country": {
+        "iso_code": "US",
+        "name": "United States"
+      },
+      "latitude": 37.4056,
+      "longitude": -122.0775
+    }
+  },
+  "9.9.9.0/24": {
+    "location": {
+      "city": {
+        "name": "Zurich"
+      },
+      "continent": {
+        "name": "Europe"
+      },
+      "country": {
+        "iso_code": "CH",
+        "name": "Switzerland"
+      },
+      "latitude": 47.3769,
+      "longitude": 8.5417
+    }
+  }
+}
