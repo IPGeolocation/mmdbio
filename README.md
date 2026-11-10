@@ -324,7 +324,9 @@ Give them as flags or in a config.
 | JSON array | `[{"network": "1.2.3.0/24", ...fields}, ...]` |
 | NDJSON | one `{"network": ..., ...}` object per line |
 
-JSON is read one record at a time, so a file of any size works.
+JSON is read one record at a time, so a file of any size works. A file named
+`data.csv` that exists only as `data.csv.gz` is read from the `.gz`; this
+holds for lookups and template tables too.
 
 IPv4-mapped addresses (`::ffff:1.2.3.4`) count as IPv4. Rows may come in any
 order and overlap. They are sorted on disk, past the `--memory` buffer
@@ -347,6 +349,7 @@ More shaping options:
 | `--rename column=key` | store a column (or top-level JSON key) under another name; repeatable |
 | `--empty-if column=value` | read that value of the column as empty (`bot_type=0`); repeatable, and a column may have several |
 | `--lookup FILE` | take each record from a row of another CSV (see below) |
+| `--order ipv6-first` | where rows overlap, every IPv4 row counts as later than every IPv6 row, as if the file were read twice, IPv6 rows first (the default `file` is file order) |
 
 `--include`, `--exclude`, `--type` and `--empty-if` name the input's columns;
 `--rename` decides the key the record gets.
@@ -405,9 +408,9 @@ Rules that apply to every type:
 - **Invalid UTF-8** in a value becomes U+FFFD, so the file always passes
   verification.
 
-Not supported yet: bytes fields, typed arrays from CSV (arrays from CSV are
-arrays of strings), and nested maps from CSV beyond `--nest-keys`'s dotted
-names.
+Not supported yet: bytes fields, and typed arrays from CSV (arrays from CSV
+are arrays of strings). Records of any shape, from several CSVs, come from a
+[record template](#record-templates).
 
 ### Overlapping rows (`--merge`)
 
@@ -466,6 +469,109 @@ A JSON file with any of these keys; see `examples/import-config.json`.
 | `shrink` | `--shrink` | `true` or `false` |
 | `temp_dir` | `--tmp-dir` | where the sort and record files go (default `$TMPDIR`, else the system's temporary directory) |
 | `memory_mb` | `--memory` | the in-memory sort buffer |
+| `order` | `--order` | `file` or `ipv6-first` (see above) |
+| `vars` | `--var name=value` | values for `${name}` in the config's paths; a `--var` wins, and a name in neither is taken from the environment (`${HOME}`) |
+| `record` | | a [record template](#record-templates) |
+
+Paths may hold `${name}`, and start with `~`. One config then serves several
+trees of files: `mmdbio import --config city.json --var root=/data/samples`.
+
+### Record templates
+
+A template builds each record from the columns of the input row and of other
+CSVs (tables), shaped as you write it. With `record` in the config, the input
+row gives the network and the columns the template names; `fields`, `lookup`
+and their flags do not apply. The input must be CSV or TSV.
+
+```json
+{
+  "input": "${root}/ranges.csv",
+  "output": "${root}/city.mmdb",
+  "vars": {"root": "~/data"},
+  "order": "ipv6-first",
+  "record": {
+    "tables": {
+      "country": "${root}/country.csv",
+      "place": {"path": "${root}/place.csv", "key": "id", "trim": false}
+    },
+    "trim": true,
+    "types": {"latitude": "double", "accuracy_radius": "uint16"},
+    "define": {"names": {"en": "place_english", "de": "place_german"}},
+    "skip_if": [{"value": {"$table": "country", "$on": "country_id", "$col": "code2"}, "in": ["", "ZZ"]}],
+    "shape": {
+      "country": {"$table": "country", "$on": "country_id",
+                  "iso_code": "code2",
+                  "names": {"$use": "names", "$table": "place", "$on": "name_place_id"}},
+      "city": {"names": {"$use": "names", "$table": "place", "$on": "city_place_id"}},
+      "location": {"latitude": "latitude", "accuracy_radius": {"$col": "radius", "$ceil": true}},
+      "time_zone": "time_zone"
+    }
+  }
+}
+```
+
+**The record object**
+
+| key | meaning |
+| --- | --- |
+| `shape` | the record: a map (required) |
+| `tables` | `name: "path"`, or `name: {"path": ..., "key": "id", "trim": false}`. A table is indexed by its `key` column (default: its first); a repeated id keeps its last row. Only where each row starts is kept in memory. `trim` sets the default for its values |
+| `define` | `name: value`, reused with `$use` |
+| `types` | `key: type`: the type of a value stored under that key, wherever it is (inside parsed values too). Without one a value is a string. The types are those of `--type` |
+| `trim` | take white space (Unicode's, as Perl's `\s`) off both ends of every value; default `false` |
+| `empty` | `keep` (default) stores `""`; `omit` leaves out empty values, and the maps and arrays left empty |
+| `invalid` | what a value that breaks a rule does: `bad` (default: the row is skipped with a warning), `omit` (the value is left out, and counted in the log), `skip` (the row is left out quietly) |
+| `skip_if` | `[{"value": value, "in": ["", "ZZ"]}, ...]`: a row whose value is in the list is left out |
+| `skip_empty` | `true`: a row whose record ends up empty is left out |
+
+**Values in the shape**
+
+| value | meaning |
+| --- | --- |
+| `"column"` | that column of the current row; `"column?"` reads `""` when the file has no such column (otherwise naming a missing column is an error) |
+| `{"key": value, ...}` | a map |
+| `[value, ...]` or `{"$array": [...]}` | an array; values left out drop out |
+| `12`, `true`, `{"$const": ...}` | a constant; a string `$const` goes through the steps below |
+| `{"$col": "column", steps...}` | a column, with steps |
+| `{"$table": "t", "$on": "column", ...}` | the rest of this value reads the row of table `t` whose id is the value of `column` in the current row. Joins nest: a table row's column can pick a row of another table |
+| `"$missing"` (with `$table`) | an id the table lacks (an empty id finds no row): `empty` (default: every column reads `""`), `omit` (the value is left out), `skip` (the row is left out) |
+| `{"$use": "name"}` | the `define` entry, read in the current row (with `$table`, in that table's) |
+| `{"$first": [value, ...]}` | the first value that is not empty |
+| `"$trim"`, `"$empty"`, `"$invalid"` | the record's settings, for this value and those inside it |
+
+**Steps**, applied in this order to a `$col` or a string `$const`:
+
+| step | effect |
+| --- | --- |
+| `$trim` | `true` or `false` |
+| `$case` | `upper` or `lower` (ASCII letters) |
+| `$empty_if` | values that read as empty, e.g. `["0", "-"]` |
+| `$strip_prefix` | `{"equals": value, "sep": "-"}`: `US-CA` becomes `CA` when the value is `US`, and empty when it is another prefix |
+| `$one_of` | the allowed values; another one is invalid |
+| `$chars` | the allowed characters, e.g. `"A-Z0-9"`; another is invalid |
+| `$length` | `[min, max]` characters |
+| `$number` | `[min, max]`: the value must be a number in that range |
+| `$ceil` | `true`: rounded up to a whole number |
+| `$default` | the value used when it is empty |
+| `$parse` | `literal`: a Python, Perl or JSON literal (`['a', 'b']`, `[{'k': 'v'}]`, `{"k": 1}`, `\xNN` escapes, `True`, `None`) becomes arrays and maps, typed by `types`; `list`: `[A, B, C]` split on commas, each item trimmed and a quote taken off either end |
+| `$type` | the type, over `types` |
+
+The steps that check a value (`$one_of`, `$chars`, `$length`, `$number`)
+pass empty values. The log counts the ids each table lacked and the values
+left out as invalid.
+
+A record depends only on the input columns its template reads, so a row
+whose values in those columns came before reuses that record without
+building it again: an ASN database whose 39 million ranges point at 137,000
+ASNs builds each ASN's record once. (With `--network-field`, `--no-fields` or
+`--fill-gaps` every row is built.)
+
+A `$table` map or array is likewise built once per id. When its encoding
+takes 1 KiB or more, it is also kept once: the records hold a reference to it
+until the data section writes it once and points at it, as an MMDB file does
+anyway. So a city database with the full ASN (routes and peers) in each of
+its 37 million records keeps every ASN once in its temporary files, not once
+per record. The file written is the same either way.
 
 ## The library
 
@@ -572,12 +678,16 @@ src/            the tool
   input.*                files, stdin and gzip (bundled zlib)
   csv.*, jstream.*       CSV (Go's encoding/csv rules) and streaming JSON
   rows.*                 rows of an input: detection, fields, types
+  tables.*               keyed CSV tables: --lookup and template tables
+  tmpl.*                 record templates: compiled from the config, built per row
+  shared.*               big $table values kept once while building (shared values)
   bconfig.c, build.h     import settings and the config file
   engine.c               the build: record store, sort runs, overlap sweep
   streamwriter.*         the streaming tree writer (two passes, tree on disk)
   mmdb_enc.*             data-section encoding and deduplication
 tests/
-  unit_tests.c           addresses, Go number formatting, flags, types, JSON and CSV output
+  unit_tests.c           addresses, Go number formatting, flags, types, template literals,
+                         JSON and CSV output
   run_tests.sh           end-to-end: the commands, the CLI, and the checkers below
   check_build.py         import against a brute-force model of every address
   check_robust.py        corrupted and malformed inputs fail cleanly
@@ -585,6 +695,7 @@ tests/
   check_features.py      arguments, the new formats, diff by lookup, import options, completion
   check_edges.py         databases built with every feature and input shape, checked with
                          the independent reader, then read, exported, re-imported and shrunk
+  check_template.py      record templates, order, vars: built, then read back independently
   lib_test.c             the library, through its header only
   mmdb_py.py             an independent MMDB writer and reader for those checks
 packaging/               .deb and .rpm builders, the Homebrew formula
