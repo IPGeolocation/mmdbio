@@ -1,7 +1,8 @@
 /* Unit tests: address parsing and formatting, Go's number formatting, the
- * flag parser, field types, the JSON writer, CSV/TSV cells and rows, the
- * prefix a lookup reports, and the random address stream. Prints failures
- * and a "N passed, M failed" line; exits 1 on any failure. */
+ * flag parser, field types, record templates' literals, lists and trimming,
+ * the JSON writer, CSV/TSV cells and rows, the prefix a lookup reports, and
+ * the random address stream. Prints failures and a "N passed, M failed"
+ * line; exits 1 on any failure. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@
 #include "rows.h"
 #include "shrink.h"
 #include "tabular.h"
+#include "tmpl.h"
 
 static int passed, failed;
 
@@ -278,6 +280,132 @@ static void test_types(void)
 	}
 }
 
+/* a value as compact text: strings bare, maps {k=v,...}, arrays [a|b] */
+static void show(buf_t *b, const mval *v)
+{
+	switch (v->type) {
+	case T_STRING:
+		buf_printf(b, "%.*s", (int)v->n, (const char *)v->s);
+		break;
+	case T_UINT16:
+	case T_UINT32:
+	case T_UINT64:
+		buf_printf(b, "u:%llu", (unsigned long long)v->u);
+		break;
+	case T_INT32:
+		buf_printf(b, "i:%d", (int32_t)v->u);
+		break;
+	case T_DOUBLE:
+		buf_printf(b, "d:%g", v->f);
+		break;
+	case T_BOOL:
+		buf_printf(b, "b:%d", (int)v->u);
+		break;
+	case T_ARRAY:
+		buf_printf(b, "[");
+		for (uint32_t i = 0; i < v->n; i++) {
+			if (i)
+				buf_printf(b, "|");
+			show(b, &v->items[i]);
+		}
+		buf_printf(b, "]");
+		break;
+	case T_MAP:
+		buf_printf(b, "{");
+		for (uint32_t i = 0; i < v->n; i++) {
+			buf_printf(b, "%s%.*s=", i ? "," : "", (int)v->items[2 * i].n, (const char *)v->items[2 * i].s);
+			show(b, &v->items[2 * i + 1]);
+		}
+		buf_printf(b, "}");
+		break;
+	default:
+		buf_printf(b, "type %d", v->type);
+	}
+}
+
+static void test_template_values(void)
+{
+	struct {
+		const char *in, *want;
+	} lits[] = {
+		{"['1.2.3.0/24', \"2001:db8::/32\"]", "[1.2.3.0/24|2001:db8::/32]"},
+		{"[]", "[]"},
+		{" [1, -2, 2.5, True, False, None,] ", "[u:1|i:-2|d:2.5|b:1|b:0|]"},
+		{"({'b': 'x', 'a': 'y'},)", "[{a=y,b=x}]"},
+		{"{'k': 1, 'k': 2}", "{k=u:2}"},
+		{"{'as': 'AS1', 'name': 'Caf\\xe9 \\u00e9\\n'}", "{as=AS1,name=Caf\xc3\xa9 \xc3\xa9\n}"},
+		{"[u'py2', 10L]", "[py2|u:10]"},
+		{"{\"json\": [true, null]}", "{json=[b:1|]}"},
+		{"{'perl' => 'hash'}", "{perl=hash}"},
+		{"'it''s'", "error"},
+		{"['a'", "error"},
+		{"[1 2]", "error"},
+		{"{1: }", "error"},
+		{"abc", "error"},
+		{"['a'] x", "error"},
+	};
+	for (size_t i = 0; i < sizeof lits / sizeof lits[0]; i++) {
+		arena a;
+		arena_init(&a);
+		mval v;
+		char why[200];
+		buf_t b = {0};
+		if (tmpl_parse_literal((const uint8_t *)lits[i].in, strlen(lits[i].in), &a, &v, why, sizeof why) < 0)
+			buf_printf(&b, "error");
+		else
+			show(&b, &v);
+		CHECK(strcmp(buf_cstr(&b), lits[i].want) == 0, "literal %s = %s, want %s", lits[i].in, b.p, lits[i].want);
+		buf_free(&b);
+		arena_free(&a);
+	}
+	struct {
+		const char *in, *want;
+	} lists[] = {
+		{"[A,B,C]", "[A|B|C]"},
+		{" [ A , 'B' ,\"C\" ] ", "[A|B|C]"},
+		{"[\"a,b\",c]", "[a|b|c]"}, /* Perl splits inside quotes too */
+		{"[A,,B]", "[A||B]"},
+		{"[A,B,,]", "[A|B]"},
+		{"[\"\"]", "[]"},
+		{"[]", "[]"},
+		{"", "[]"},
+		{"A", "[A]"},
+		{"[A", "[A]"},
+		{"'x\"", "[x]"},
+	};
+	for (size_t i = 0; i < sizeof lists / sizeof lists[0]; i++) {
+		arena a;
+		arena_init(&a);
+		mval v;
+		buf_t b = {0};
+		tmpl_parse_list((const uint8_t *)lists[i].in, strlen(lists[i].in), &a, &v);
+		show(&b, &v);
+		/* an empty item shows as nothing between bars; [""] is one empty item */
+		const char *want = strcmp(lists[i].in, "[\"\"]") == 0 ? "[]" : lists[i].want;
+		CHECK(strcmp(buf_cstr(&b), want) == 0 && (strcmp(lists[i].in, "[\"\"]") != 0 || v.n == 1),
+		      "list %s = %s (%u items), want %s", lists[i].in, b.p, v.n, want);
+		buf_free(&b);
+		arena_free(&a);
+	}
+	struct {
+		const char *in, *want;
+	} trims[] = {
+		{"  a b \t", "a b"},
+		{"\xC2\xA0x\xE3\x80\x80", "x"},
+		{"\xE2\x80\x83 \r\n", ""},
+		{"\xC3\xA9 ", "\xC3\xA9"},
+		{"\xC2\x85y\xC2\x85", "y"},
+		{"\xC2\xADz", "\xC2\xADz"}, /* a soft hyphen is not white space */
+	};
+	for (size_t i = 0; i < sizeof trims / sizeof trims[0]; i++) {
+		const uint8_t *s = (const uint8_t *)trims[i].in;
+		size_t n = strlen(trims[i].in);
+		tmpl_trim(&s, &n);
+		CHECK(n == strlen(trims[i].want) && memcmp(s, trims[i].want, n) == 0, "trim case %zu = \"%.*s\"", i, (int)n,
+		      (const char *)s);
+	}
+}
+
 static void test_json_writer(void)
 {
 	dnode leaf = {.kind = T_STRING, .s = (const uint8_t *)"<a&b>", .n = 5};
@@ -379,6 +507,7 @@ int main(void)
 	test_numbers();
 	test_flags();
 	test_types();
+	test_template_values();
 	test_json_writer();
 	test_tabular();
 	test_rng();

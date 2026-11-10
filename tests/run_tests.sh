@@ -10,6 +10,8 @@
 # 6. check_features.py: everything beyond the Go mmdbio.
 # 7. check_edges.py: databases built with every feature, checked with an
 #    independent reader, then read, exported, re-imported and shrunk.
+# 8. check_template.py: record templates (tables, nested joins, value steps),
+#    "order", "vars" and --var, read back independently.
 # $PYTHON names the Python 3 to use (default python3).
 set -u
 PY=${PYTHON:-python3}
@@ -121,8 +123,8 @@ if [ -f data.mmdb ] && grep -q "Database Type: data" meta.txt; then
 	ok "import: the output and title default to the input's name"
 else bad "import defaults" "$(cat import.txt meta.txt; ls -l)"; fi
 
-# 3 to 6
-for check in check_build check_robust check_shrink check_features check_edges; do
+# 3 to 8
+for check in check_build check_robust check_shrink check_features check_edges check_template; do
 	if $PY -I "$here/$check.py" "$M" "$work/$check" > "$check.log" 2>&1; then
 		ok "$check.py ($(tail -1 "$check.log"))"
 	else bad "$check.py" "$(grep -E '^FAIL|Error|Traceback' -A5 "$check.log" | head -30)"; fi
