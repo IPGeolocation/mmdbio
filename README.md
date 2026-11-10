@@ -1,7 +1,8 @@
 # mmdbio: an MMDB command-line toolkit, in C
 
-`mmdbio` reads and writes MMDB files, the compact binary format used for
-offline IP geolocation and IP intelligence lookups. It can:
+`mmdbio` reads and writes MMDB files: the compact binary format that IP
+geolocation and IP intelligence databases ship in, so lookups run offline.
+It can:
 
 - look up IPs one at a time, from lists and files, or across CIDRs and
   ranges, as JSON, JSON Lines, CSV or TSV;
@@ -13,8 +14,8 @@ offline IP geolocation and IP intelligence lookups. It can:
 - **build MMDB files from CSV, TSV, JSON or NDJSON, gzipped or not**, with or
   without a config file.
 
-It is a C rewrite of the Go `mmdbio` 1.2 with the same commands and flags, so
-existing scripts keep working. Every command runs offline.
+It replaces the Go `mmdbio` 1.x with the same commands and flags, so
+existing scripts keep working ([what changed](#upgrading-from-the-go-mmdbio-1x)).
 
 - **One static binary.** zlib is bundled, so there are no runtime
   dependencies and the build needs only a C compiler.
@@ -24,7 +25,8 @@ existing scripts keep working. Every command runs offline.
 - **Constant-memory reads.** `export` and `diff` stream through the files,
   so a database of any size exports without being loaded.
 - **Everywhere.** Linux (amd64, arm64, armv7, 386), macOS (arm64, amd64),
-  Windows (amd64, 386), FreeBSD, and the other BSDs and illumos from source.
+  Windows (amd64, 386), FreeBSD, OpenBSD, NetBSD and DragonFly BSD; illumos
+  from source.
 - **A C library** too: `libmmdbio` does all of this for C programs.
 
 ## Install
@@ -33,10 +35,10 @@ existing scripts keep working. Every command runs offline.
 | --- | --- |
 | Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/IPGeolocation/mmdbio/main/install.sh \| sh` |
 | Windows (PowerShell) | `irm https://raw.githubusercontent.com/IPGeolocation/mmdbio/main/install.ps1 \| iex` |
-| Debian, Ubuntu | `sudo apt install ./mmdbio_<version>_amd64.deb` from a release |
-| Fedora, RHEL, SUSE | `sudo rpm -i mmdbio-<version>-1.x86_64.rpm` from a release |
+| Debian, Ubuntu | download the `.deb` from the [releases page](https://github.com/IPGeolocation/mmdbio/releases), then `sudo apt install ./mmdbio_<version>_amd64.deb` |
+| Fedora, RHEL, SUSE | download the `.rpm` from the [releases page](https://github.com/IPGeolocation/mmdbio/releases), then `sudo rpm -i mmdbio-<version>-1.x86_64.rpm` |
 | Homebrew | the formula in `packaging/homebrew/mmdbio.rb` |
-| anything else | build from source (below) |
+| anything else | [build from source](#build-from-source) |
 
 The install scripts download the release archive for your system, check it
 against the release's `SHA256SUMS`, and install `mmdbio` into
@@ -60,40 +62,13 @@ make
 sudo make install      # mmdbio in /usr/local/bin, the library and its header
 ```
 
-`make test` runs the test suite (it needs `python3`). On Linux the binary is
-fully static, so it runs on any Linux machine of the same architecture.
+On the BSDs and illumos, use `gmake` instead of `make`. `make test` runs the
+test suite (it needs `python3`). On Linux the binary is fully static, so it
+runs on any Linux machine of the same architecture.
 
-| target | command |
-| --- | --- |
-| this machine | `make` (`gmake` on the BSDs and illumos) |
-| Windows, from Linux | `make CC=x86_64-w64-mingw32-gcc BUILD=build-windows` |
-| 32-bit Windows, from Linux | `make CC="clang --target=i686-w64-mingw32" BUILD=build-windows-386 LIBAR=i686-w64-mingw32-ar NM=i686-w64-mingw32-nm OBJCOPY=i686-w64-mingw32-objcopy` |
-| 32-bit x86 Linux | `make CC=i686-linux-gnu-gcc BUILD=build-386`, or `CC="gcc -m32"` with gcc-multilib (GCC 14 or newer, for C23's `_BitInt`; on Debian and Ubuntu gcc-multilib can't be installed beside the ARM cross compilers, gcc-i686-linux-gnu can) |
-| 64-bit ARM Linux, from x86 | `make CC=aarch64-linux-gnu-gcc BUILD=build-arm64` |
-| 32-bit ARM Linux, from x86 | `make CC="clang --target=armv7-linux-gnueabihf" BUILD=build-armv7` (GCC has no `_BitInt` there) |
-| the library | `make lib` (`build/libmmdbio.a`; see [The library](#the-library)) |
-
-FreeBSD, OpenBSD, NetBSD, DragonFly BSD and illumos build from source with
-`gmake`, and `.github/workflows/ci.yml` builds and tests each of them. A
-32-bit build maps the whole database into its address space, so it can't open
-files bigger than 2 to 3 GB.
-
-### Release files
-
-`./build-release.sh` builds and tests, into `dist/`:
-
-- `mmdbio-<version>-<os>-<arch>.tar.gz` (`.zip` for Windows) with `mmdbio`,
-  the library and its header, the README and the license;
-- on Linux, a `.deb` and an `.rpm` (with shell completions), when
-  `dpkg-deb` and `rpmbuild` are installed;
-- on Linux amd64, also linux-386, linux-arm64, linux-armv7, windows-amd64
-  and windows-386, each tested under qemu or wine when they are installed
-  (the compilers each one needs are listed at the top of the script);
-- `SHA256SUMS`.
-
-`.github/workflows/release.yml` runs it on every platform when a `v<version>`
-tag is pushed and publishes the files. The `.deb`'s maintainer is
-`$DEB_MAINTAINER` (default: the git user).
+A 32-bit build maps the whole database into its address space, so it can't
+open files bigger than 2 to 3 GB; use a 64-bit build for large databases.
+Cross-compiling and release builds are under [Development](#development).
 
 ## Quick start
 
@@ -123,7 +98,7 @@ Every command also takes its files as flags (`--db`, `--in`, `--out`,
 | command | what it does |
 | --- | --- |
 | `read` | look up IPs; see below |
-| `metadata` | the metadata: type, IP version, record size, node count, build date, languages, description; `--layout` adds the format version and each section's size and offset, `--data-types` the data section broken down by value type, `--json` (or `-f json`; `-f text`, or mmdbctl's `-f pretty`, is the default) all of it (every metadata key) as JSON |
+| `metadata` | the database's type, IP version, record size, node count, build date, languages and description. `--layout` adds each section's size and offset, `--data-types` the data section's size by value type, and `--json` prints everything as JSON |
 | `stats` | the metadata plus IPv4, IPv6 and network counts (`--json` for JSON) |
 | `inspect` | the field paths and types of the record at `--sample-ip`; `--out` saves them as a JSON schema |
 | `verify` | checks the tree, the data section and the metadata; prints `valid` (exit 0) or `invalid: reason` (exit 1) |
@@ -131,7 +106,7 @@ Every command also takes its files as flags (`--db`, `--in`, `--out`,
 | `import` | builds an MMDB from CSV, TSV, JSON or NDJSON; see below |
 | `shrink` | a smaller file with the same lookups; see below |
 | `diff` | networks added, removed or modified between two files (`--summary`, `--json`); `--subnets` and `--records` compare by lookup (see below) |
-| `completion` | shell completion for bash, zsh, fish or powershell, printed, or set up by `completion install` (and removed by `completion uninstall`). The scripts ask mmdbio itself what fits: commands, flags, the values a flag takes (`--format`, `--merge`, `--record-size`, `--type field=...`), `.mmdb` files where a database goes, other files elsewhere |
+| `completion` | tab completion for bash, zsh, fish or PowerShell: `mmdbio completion install` sets it up for your shell, and `completion uninstall` removes it. It completes commands, flags, flag values and `.mmdb` files |
 
 The database is `--db` or an argument (the first one; for `read`, the last).
 `mmdbio <command> --help` lists every flag. `--nocolor` (anywhere) or
@@ -533,7 +508,7 @@ Here `ranges.csv` has the columns `start_ip`, `end_ip`, `country_id`,
 | `tables` | `name: "path"`, or `name: {"path": ..., "key": "id", "trim": false}`. A table is indexed by its `key` column (default: its first); a repeated id keeps its last row. Only where each row starts is kept in memory. `trim` sets the default for its values |
 | `define` | `name: value`, reused with `$use` |
 | `types` | `key: type`: the type of a value stored under that key, wherever it is (inside parsed values too). Without one a value is a string. The types are those of `--type` |
-| `trim` | take white space (Unicode's, as Perl's `\s`) off both ends of every value; default `false` |
+| `trim` | take white space (any Unicode white space, non-breaking spaces included) off both ends of every value; default `false` |
 | `empty` | `keep` (default) stores `""`; `omit` leaves out empty values, and the maps and arrays left empty |
 | `invalid` | what a value that breaks a rule does: `bad` (default: the row is skipped with a warning), `omit` (the value is left out, and counted in the log), `skip` (the row is left out quietly) |
 | `skip_if` | `[{"value": value, "in": ["", "ZZ"]}, ...]`: a row whose value is in the list is left out |
@@ -624,11 +599,13 @@ cc -Iinclude my.c build/libmmdbio.a -lm      # -lpsapi too on Windows
 `examples/lib_example.c` is a small lookup tool, and `tests/lib_test.c`
 exercises every function.
 
-## Differences from the Go mmdbio
+## Upgrading from the Go mmdbio (1.x)
 
-The commands, flags and output formats are the same; everything new is
-added beside them (arguments for files, new formats and flags, `shrink`).
-These things changed:
+This version replaces the Go `mmdbio` 1.x. The commands, flags and output
+formats are the same, so scripts keep working; everything new is added
+beside them (arguments for files, new formats and flags, `shrink`). If you
+installed the Go version with `go install`, switch to one of the installers
+above. These things changed:
 
 - **`import` reads CSV, TSV, JSON arrays and NDJSON**, each gzipped or not, as
   well as the old JSON object. It takes a config file, and the old flags
@@ -656,6 +633,40 @@ These things changed:
 - **`export` without `--out`** writes to stdout (Go: an error).
 
 ## Development
+
+### Cross-compiling
+
+| target | command |
+| --- | --- |
+| Windows, from Linux | `make CC=x86_64-w64-mingw32-gcc BUILD=build-windows` |
+| 32-bit Windows, from Linux | `make CC="clang --target=i686-w64-mingw32" BUILD=build-windows-386 LIBAR=i686-w64-mingw32-ar NM=i686-w64-mingw32-nm OBJCOPY=i686-w64-mingw32-objcopy` |
+| 32-bit x86 Linux | `make CC=i686-linux-gnu-gcc BUILD=build-386`, or `CC="gcc -m32"` with gcc-multilib (GCC 14 or newer, for C23's `_BitInt`; on Debian and Ubuntu gcc-multilib can't be installed beside the ARM cross compilers, gcc-i686-linux-gnu can) |
+| 64-bit ARM Linux, from x86 | `make CC=aarch64-linux-gnu-gcc BUILD=build-arm64` |
+| 32-bit ARM Linux, from x86 | `make CC="clang --target=armv7-linux-gnueabihf" BUILD=build-armv7` (GCC has no `_BitInt` there; clang older than 21 also needs `--ld-path=$(command -v arm-linux-gnueabihf-ld)`) |
+| the library | `make lib` (`build/libmmdbio.a`; see [The library](#the-library)) |
+
+`.github/workflows/ci.yml` builds and tests every platform above, plus
+FreeBSD, OpenBSD, NetBSD, DragonFly BSD and illumos.
+
+### Release files
+
+`./build-release.sh` builds and tests, into `dist/`:
+
+- `mmdbio-<version>-<os>-<arch>.tar.gz` (`.zip` for Windows) with `mmdbio`,
+  the library and its header, the README and the license;
+- on Linux, a `.deb` and an `.rpm` (with shell completions), when
+  `dpkg-deb` and `rpmbuild` are installed;
+- on Linux amd64, also linux-386, linux-arm64, linux-armv7, windows-amd64
+  and windows-386, each tested under qemu or wine when they are installed
+  (the compilers each one needs are listed at the top of the script);
+- `SHA256SUMS`.
+
+`.github/workflows/release.yml` runs it on every platform when a `v<version>`
+tag is pushed and publishes the files; a tag with a hyphen
+(`v2.0.0-rc.1`) is published as a pre-release. The `.deb`'s maintainer is
+`$DEB_MAINTAINER` (default: the git user).
+
+### Source layout
 
 ```
 src/            the tool
