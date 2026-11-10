@@ -101,6 +101,7 @@ static void flag_values(answer *a, const command *c, const flag *f)
 	static const char *const import_formats[] = {"auto", "csv", "tsv", "json", "jsonl", NULL};
 	static const char *const text_json[] = {"text", "json", NULL};
 	static const char *const merges[] = {"none", "keep", "toplevel", "recurse", NULL};
+	static const char *const orders[] = {"file", "ipv6-first", NULL};
 	static const char *const sizes[] = {"auto", "24", "28", "32", NULL};
 	static const char *const record_sizes[] = {"0", "24", "28", "32", NULL};
 	static const char *const families[] = {"4", "6", NULL};
@@ -114,6 +115,8 @@ static void flag_values(answer *a, const command *c, const flag *f)
 			      : c == &cmd_import ? import_formats : text_json);
 	else if (strcmp(n, "merge") == 0)
 		offer_list(a, merges);
+	else if (strcmp(n, "order") == 0)
+		offer_list(a, orders);
 	else if (strcmp(n, "size") == 0)
 		offer_list(a, sizes);
 	else if (strcmp(n, "record-size") == 0)

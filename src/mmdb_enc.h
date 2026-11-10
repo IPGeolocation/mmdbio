@@ -23,6 +23,10 @@ enum {
 	T_END_MARKER = 13,
 	T_BOOL = 14,
 	T_FLOAT = 15,
+	/* Not an MMDB type: a value kept once in the build's shared store
+	 * (shared.h), u its id. Canonical encodings hold it as a pointer to the
+	 * id; the data section writes the value once and points at it. */
+	T_SHARED = 16,
 };
 
 /* The largest length a control byte can declare. */
@@ -64,6 +68,12 @@ typedef struct {
 	bool dedup;
 	bool dedup_records; /* ds_record reuses identical records (default on) */
 	buf_t scratch;
+	/* T_SHARED values: shared_load gives the value of an id (its own shared
+	 * values stay T_SHARED); shared_at[id] is 1 + its offset once written */
+	int (*shared_load)(void *ctx, uint32_t id, mval **out);
+	void *shared_ctx;
+	uint32_t *shared_at;
+	size_t shared_cap;
 } datasec;
 
 void ds_init(datasec *d, bool dedup);

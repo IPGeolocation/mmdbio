@@ -65,6 +65,21 @@ void opts_add_empty(build_opts *o, const char *column, const char *value)
 	o->nempties++;
 }
 
+void opts_set_var(build_opts *o, const char *name, const char *value, bool replace)
+{
+	for (int i = 0; i < o->nvars; i++)
+		if (strcmp(o->var_names[i], name) == 0) {
+			if (replace)
+				opts_set_str(&o->var_values[i], value);
+			return;
+		}
+	o->var_names = xrealloc(o->var_names, (size_t)(o->nvars + 1) * sizeof *o->var_names);
+	o->var_values = xrealloc(o->var_values, (size_t)(o->nvars + 1) * sizeof *o->var_values);
+	o->var_names[o->nvars] = dupstr(name);
+	o->var_values[o->nvars] = dupstr(value);
+	o->nvars++;
+}
+
 void build_opts_free(build_opts *o)
 {
 	free(o->input);
@@ -96,6 +111,19 @@ void build_opts_free(build_opts *o)
 		free(o->empties[i].value);
 	}
 	free(o->empties);
+	free_strs(o->var_names, o->nvars);
+	free_strs(o->var_values, o->nvars);
+	if (o->record) {
+		json_free(o->record);
+		free(o->record);
+	}
+	free(o->record_file);
+	for (int i = 0; i < o->ntables; i++) {
+		free(o->tables[i].name);
+		free(o->tables[i].path);
+		free(o->tables[i].key);
+	}
+	free(o->tables);
 	memset(o, 0, sizeof *o);
 }
 
@@ -140,6 +168,7 @@ void opts_set_type(build_opts *o, const char *path, vtype t)
 typedef struct {
 	const char *file;
 	buf_t dir;
+	build_opts *o; /* for ${name} */
 } cctx;
 
 static int bad(const cctx *c, const jvalue *v, const char *where, const char *fmt, ...)
@@ -197,11 +226,49 @@ static int boolean(const cctx *c, const jvalue *v, const char *where, bool *out)
 	return 0;
 }
 
+/* ${name}: a --var, the config's "vars", or else the environment. */
+static int expand_vars(const cctx *c, const jvalue *v, const char *where, char **s)
+{
+	if (!strstr(*s, "${"))
+		return 0;
+	buf_t b = {0};
+	for (const char *p = *s; *p;) {
+		if (p[0] != '$' || p[1] != '{') {
+			buf_push(&b, (uint8_t)*p++);
+			continue;
+		}
+		const char *end = strchr(p + 2, '}');
+		if (!end) {
+			buf_free(&b);
+			return bad(c, v, where, "\"${\" without its \"}\"");
+		}
+		char name[256];
+		snprintf(name, sizeof name, "%.*s", (int)(end - p - 2), p + 2);
+		const char *val = NULL;
+		for (int i = 0; i < c->o->nvars && !val; i++)
+			if (strcmp(c->o->var_names[i], name) == 0)
+				val = c->o->var_values[i];
+		if (!val)
+			val = getenv(name);
+		if (!val) {
+			buf_free(&b);
+			return bad(c, v, where, "no value for ${%s} (give it with --var %s=..., or in \"vars\")", name, name);
+		}
+		buf_printf(&b, "%s", val);
+		p = end + 1;
+	}
+	opts_set_str(s, buf_cstr(&b));
+	buf_free(&b);
+	return 0;
+}
+
 static int path_value(const cctx *c, const jvalue *v, const char *where, char **out)
 {
 	char *raw = NULL;
-	if (str(c, v, where, false, &raw) < 0)
+	if (str(c, v, where, false, &raw) < 0 || expand_vars(c, v, where, &raw) < 0) {
+		free(raw);
 		return -1;
+	}
 	buf_t p = {0};
 	if (raw[0] == '~' && (raw[1] == '/' || raw[1] == 0) && getenv("HOME")) {
 		buf_printf(&p, "%s%s", getenv("HOME"), raw + 1);
@@ -259,13 +326,90 @@ static int delimiter(const cctx *c, const jvalue *v, char *out)
 	return rc;
 }
 
-static int load(build_opts *o, const cctx *c, const jvalue *root)
+/* "record": the template stays as parsed, for tmpl.c; its tables' paths are
+ * resolved here, like every other path of the config. */
+static int record_value(build_opts *o, const cctx *c, jvalue *v)
 {
-	static const char *const TOP[] = {"input", "output", "network", "metadata", "tree", "merge",
-					  "on_error", "fields", "temp_dir", "memory_mb", "shrink", "lookup", NULL};
+	if (v->type != J_OBJECT)
+		return bad(c, v, "record", "must be an object, not %s", json_type_name(v->type));
+	const jvalue *t = json_get(v, "tables");
+	if (t && t->type != J_OBJECT)
+		return bad(c, t, "record.tables", "must be an object of name: table");
+	for (size_t i = 0; t && i < t->len; i++) {
+		char w[300];
+		snprintf(w, sizeof w, "record.tables.%s", t->keys[i]);
+		if (!*t->keys[i] || t->keys[i][0] == '_')
+			return bad(c, &t->items[i], w, "a table needs a name that does not start with _");
+		o->tables = xrealloc(o->tables, (size_t)(o->ntables + 1) * sizeof *o->tables);
+		table_spec *ts = &o->tables[o->ntables++];
+		*ts = (table_spec){.name = dupstr(t->keys[i]), .trim = -1};
+		const jvalue *x = &t->items[i];
+		if (x->type == J_STRING) {
+			if (path_value(c, x, w, &ts->path) < 0)
+				return -1;
+			continue;
+		}
+		static const char *const K[] = {"path", "key", "trim", NULL};
+		if (known(c, x, w, K) < 0)
+			return -1;
+		const jvalue *y;
+		char ww[340];
+		if (!(y = json_get(x, "path")))
+			return bad(c, x, w, "needs \"path\"");
+		snprintf(ww, sizeof ww, "%s.path", w);
+		if (path_value(c, y, ww, &ts->path) < 0)
+			return -1;
+		snprintf(ww, sizeof ww, "%s.key", w);
+		if ((y = json_get(x, "key")) && str(c, y, ww, false, &ts->key) < 0)
+			return -1;
+		if ((y = json_get(x, "trim"))) {
+			bool b = false;
+			snprintf(ww, sizeof ww, "%s.trim", w);
+			if (boolean(c, y, ww, &b) < 0)
+				return -1;
+			ts->trim = b;
+		}
+	}
+	/* kept: taken out of the parsed config before it is freed */
+	if (o->record) {
+		json_free(o->record);
+		free(o->record);
+	}
+	o->record = xmalloc(sizeof *o->record);
+	*o->record = *v;
+	memset(v, 0, sizeof *v);
+	opts_set_str(&o->record_file, c->file);
+	return 0;
+}
+
+static int load(build_opts *o, const cctx *c, jvalue *root)
+{
+	static const char *const TOP[] = {"input", "output", "network", "metadata", "tree",   "merge",
+					  "on_error", "fields", "temp_dir", "memory_mb", "shrink", "lookup",
+					  "vars", "order", "record", NULL};
 	if (known(c, root, "config", TOP) < 0)
 		return -1;
 	const jvalue *v;
+	if ((v = json_get(root, "vars"))) {
+		if (v->type != J_OBJECT)
+			return bad(c, v, "vars", "must be an object of name: value");
+		for (size_t i = 0; i < v->len; i++) {
+			char w[300];
+			snprintf(w, sizeof w, "vars.%s", v->keys[i]);
+			char *val = NULL;
+			if (str(c, &v->items[i], w, true, &val) < 0 || expand_vars(c, &v->items[i], w, &val) < 0) {
+				free(val);
+				return -1;
+			}
+			opts_set_var(o, v->keys[i], val, false);
+			free(val);
+		}
+	}
+	if ((v = json_get(root, "order"))) {
+		if (v->type != J_STRING || (strcmp(v->s, "file") != 0 && strcmp(v->s, "ipv6-first") != 0))
+			return bad(c, v, "order", "must be file or ipv6-first");
+		o->ipv6_first = strcmp(v->s, "ipv6-first") == 0;
+	}
 	if ((v = json_get(root, "input"))) {
 		if (v->type == J_STRING) {
 			if (path_value(c, v, "input", &o->input) < 0)
@@ -527,6 +671,8 @@ static int load(build_opts *o, const cctx *c, const jvalue *root)
 				return -1;
 		}
 	}
+	if ((v = json_get(root, "record")) && record_value(o, c, (jvalue *)v) < 0)
+		return -1;
 	if ((v = json_get(root, "memory_mb"))) {
 		if (v->type != J_NUMBER || v->num < 16 || v->num > 1e7)
 			return bad(c, v, "memory_mb", "must be a number of megabytes, at least 16");
@@ -559,7 +705,7 @@ int build_opts_load_config(build_opts *o, const char *path)
 		text.len += (size_t)n;
 	}
 	close(fd);
-	cctx c = {.file = path};
+	cctx c = {.file = path, .o = o};
 	path_dir(&c.dir, path);
 	buf_cstr(&c.dir);
 	jvalue root;

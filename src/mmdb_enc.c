@@ -252,6 +252,9 @@ static int canonical(buf_t *b, const mval *v)
 			if (canonical(b, &v->items[i]) < 0)
 				return -1;
 		return 0;
+	case T_SHARED:
+		append_pointer(b, (uint32_t)v->u);
+		return 0;
 	default:
 		return append_scalar(b, v);
 	}
@@ -273,6 +276,7 @@ void ds_free(datasec *d)
 	buf_free(&d->buf);
 	buf_free(&d->scratch);
 	ht16_free(&d->seen);
+	free(d->shared_at);
 }
 
 int pwrite_all(int fd, const void *p, size_t n, uint64_t off)
@@ -328,8 +332,64 @@ int ds_inline(datasec *d, const mval *v)
 	}
 }
 
+/* A shared value, loaded on its first use and written as ds_write writes an
+ * equal value; later uses point where that put it. */
+static int ds_shared(datasec *d, const mval *v)
+{
+	uint32_t id = (uint32_t)v->u;
+	if (!d->shared_load) {
+		err_set("internal error: a shared value without its store");
+		return -1;
+	}
+	if (d->dedup && id < d->shared_cap && d->shared_at[id]) {
+		append_pointer(&d->buf, d->shared_at[id] - 1);
+		return 0;
+	}
+	mval *full;
+	if (d->shared_load(d->shared_ctx, id, &full) < 0)
+		return -1;
+	if (!d->dedup)
+		return ds_inline(d, full);
+	d->scratch.len = 0;
+	if (canonical(&d->scratch, full) < 0)
+		return -1;
+	size_t clen = d->scratch.len;
+	uint8_t h[16];
+	siphash128(d->scratch.p, clen, h);
+	uint32_t off;
+	bool known = ht16_get(&d->seen, h, &off);
+	if (known && (size_t)pointer_size(off) < clen) {
+		append_pointer(&d->buf, off);
+	} else {
+		uint64_t start = ds_size(d);
+		if (ds_inline(d, full) < 0)
+			return -1;
+		if (!known) {
+			if (start >= UINT32_MAX)
+				return 0;
+			off = (uint32_t)start;
+			uint32_t dummy;
+			ht16_get_or_put(&d->seen, h, off, &dummy);
+		}
+	}
+	if ((size_t)pointer_size(off) >= clen || off == UINT32_MAX)
+		return 0;
+	if (id >= d->shared_cap) {
+		size_t cap = d->shared_cap ? d->shared_cap : 1024;
+		while (cap <= id)
+			cap *= 2;
+		d->shared_at = xrealloc(d->shared_at, cap * sizeof *d->shared_at);
+		memset(d->shared_at + d->shared_cap, 0, (cap - d->shared_cap) * sizeof *d->shared_at);
+		d->shared_cap = cap;
+	}
+	d->shared_at[id] = off + 1;
+	return 0;
+}
+
 static int ds_write(datasec *d, const mval *v)
 {
+	if (v->type == T_SHARED)
+		return ds_shared(d, v);
 	if (!d->dedup || !cacheable(v))
 		return ds_inline(d, v);
 	d->scratch.len = 0;

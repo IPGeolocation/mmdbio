@@ -17,6 +17,10 @@ static flag import_flags[] = {
 	{.name = "out", .shorthand = 'o', .type = F_STRING,
 	 .usage = "Output .mmdb file path, or '-' for stdout (or the second argument; default: the input path with .mmdb)"},
 	{.name = "config", .shorthand = 'c', .type = F_STRING, .usage = "JSON config file with the build settings; flags override it"},
+	{.name = "var", .type = F_ARRAY,
+	 .usage = "name=value for ${name} in the config's paths, over its \"vars\" (repeatable)"},
+	{.name = "order", .type = F_STRING, .def = "file",
+	 .usage = "Which overlapping row is later: file (file order) or ipv6-first (every IPv4 row after every IPv6 row)"},
 	{.name = "ip", .type = F_INT, .def = "6", .usage = "IP version (4 or 6)"},
 	{.name = "size", .shorthand = 's', .type = F_STRING, .def = "auto",
 	 .usage = "Record size (24, 28, 32, or auto for the smallest that fits)"},
@@ -168,6 +172,17 @@ static int run_import(command *c, int argc, char **argv)
 	build_opts_init(&o);
 	int status = 1;
 	flag *f;
+	f = flag_get(c, "var");
+	for (size_t i = 0; i < f->list.n; i++) {
+		char *eq = strchr(f->list.v[i], '=');
+		if (!eq || eq == f->list.v[i]) {
+			status = fail("--var needs name=value, not \"%s\"", f->list.v[i]);
+			goto done;
+		}
+		*eq = 0;
+		opts_set_var(&o, f->list.v[i], eq + 1, true);
+		*eq = '=';
+	}
 	const char *cfg = flag_get(c, "config")->str;
 	if (*cfg && build_opts_load_config(&o, cfg) < 0) {
 		fprintf(stderr, "Error: %s\n", err_msg());
@@ -218,6 +233,13 @@ static int run_import(command *c, int argc, char **argv)
 			status = fail("--merge must be one of: none, keep, toplevel, recurse%s", "");
 			goto done;
 		}
+	}
+	if ((f = flag_get(c, "order"))->set) {
+		if (strcmp(f->str, "file") != 0 && strcmp(f->str, "ipv6-first") != 0) {
+			status = fail("--order must be file or ipv6-first, not \"%s\"", f->str);
+			goto done;
+		}
+		o.ipv6_first = strcmp(f->str, "ipv6-first") == 0;
 	}
 	if ((f = flag_get(c, "alias-6to4"))->set)
 		o.alias_ipv4 = f->b;

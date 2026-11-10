@@ -13,6 +13,8 @@
 #include "jstream.h"
 #include "mmdb_read.h"
 #include "netaddr.h"
+#include "tables.h"
+#include "tmpl.h"
 #include "utf8.h"
 
 #define PREFIX_BYTES (64u << 10)
@@ -74,17 +76,14 @@ struct row_source {
 	csv_reader *vals; /* where field values come from: the input, or a lookup row */
 	bool blank;       /* an id the lookup lacks: every field reads as empty */
 	/* --lookup */
-	bool lk_on, lk_open;
-	csv_reader lk;
+	bool lk_on;
+	ktable lk;
 	int id_col;       /* the input's id column */
-	ht16 lk_ix;       /* hash of an id -> index into lk_offs */
-	int64_t *lk_offs; /* where each id's last row starts */
-	size_t lk_n, lk_cap;
-	char *lk_tmp;     /* the unpacked copy of a gzipped lookup */
-	char *lk_key;     /* the lookup's id column name */
-	uint64_t lk_rows, lk_missing;
+	uint64_t lk_missing;
 	uint8_t lk_last[16]; /* the previous row's id: neighbours often share one */
 	bool lk_has_last, lk_last_blank;
+	/* a record template */
+	tmpl *tm;
 	/* JSON */
 	jstream js;
 	bool js_open;
@@ -520,27 +519,6 @@ static bool has_suffix(const char *s, const char *suf)
 	return n >= m && strcasecmp(s + n - m, suf) == 0;
 }
 
-
-static char detect_delimiter(const uint8_t *p, size_t n)
-{
-	static const char cands[] = {',', '\t', ';', '|'};
-	size_t count[4] = {0};
-	bool q = false;
-	for (size_t i = 0; i < n && (q || p[i] != '\n'); i++) {
-		if (p[i] == '"')
-			q = !q;
-		else if (!q)
-			for (int k = 0; k < 4; k++)
-				if (p[i] == (uint8_t)cands[k])
-					count[k]++;
-	}
-	int best = 0;
-	for (int k = 1; k < 4; k++)
-		if (count[k] > count[best])
-			best = k;
-	return cands[best];
-}
-
 static int shape_add(shape *sh, const char *key, size_t klen, int field, const char *full)
 {
 	const char *dot = memchr(key, '.', klen);
@@ -687,134 +665,16 @@ static int build_fields(row_source *s, char **names, size_t *lens, int ncols, in
 
 /* ---- --lookup ---- */
 
-/* Indexes the lookup CSV (an id's last row wins) and builds the fields from
- * its header. Nothing of the rows is kept but where they start: a row is
- * read again when an input row asks for its id. */
+/* Indexes the lookup CSV (tables.h) and builds the fields from its header. */
 static int lookup_setup(row_source *s)
 {
 	const build_opts *o = s->o;
-	const char *path = o->lookup_path;
-	instream *in = in_open(path);
-	if (!in) {
-		err_prefix("lookup");
+	if (ktable_open(&s->lk, "lookup", o->lookup_path, o->lookup_key, o->tmp_dir, o->lazy_quotes) < 0)
 		return -1;
-	}
-	if (in_is_gzip(in)) {
-		/* read back at random, so unpacked first */
-		buf_t t = {0};
-		buf_printf(&t, "%s/mmdbio-lookup-%ld.csv", o->tmp_dir && *o->tmp_dir ? o->tmp_dir : temp_dir(), (long)getpid());
-		FILE *f = fopen(buf_cstr(&t), "wb");
-		if (!f) {
-			err_set("create %s: %s (set --tmp-dir)", buf_cstr(&t), go_strerror(errno));
-			buf_free(&t);
-			in_close(in);
-			return -1;
-		}
-		s->lk_tmp = strdup(buf_cstr(&t));
-		buf_free(&t);
-		uint8_t chunk[1 << 16];
-		ssize_t n;
-		while ((n = in_read(in, chunk, sizeof chunk)) > 0)
-			fwrite(chunk, 1, (size_t)n, f);
-		bool failed = n < 0 || ferror(f);
-		if (fclose(f) != 0 || failed) {
-			if (n >= 0)
-				err_set("write %s: %s", s->lk_tmp, go_strerror(errno));
-			in_close(in);
-			return -1;
-		}
-		path = s->lk_tmp;
-	}
-	in_close(in);
-	char delim = has_suffix(o->lookup_path, ".tsv") || has_suffix(o->lookup_path, ".tsv.gz") ? '\t' : 0;
-	if (!delim) {
-		FILE *f = fopen(path, "rb");
-		uint8_t head[1 << 16];
-		size_t n = f ? fread(head, 1, sizeof head, f) : 0;
-		if (f)
-			fclose(f);
-		delim = detect_delimiter(head, n);
-	}
-	csv_reader r;
-	if (csv_open(&r, path) < 0) {
-		err_prefix("lookup");
+	if (build_fields(s, s->lk.cols, s->lk.lens, s->lk.ncols, s->lk.key, -1, -1) < 0)
 		return -1;
-	}
-	r.comma = (uint8_t)delim;
-	r.lazy_quotes = o->lazy_quotes;
-	bool eof;
-	int rc = -1;
-	char **names = NULL;
-	size_t *lens = NULL;
-	int ncols = 0;
-	if (csv_read(&r, &eof) < 0 || eof) {
-		if (eof)
-			err_set("the lookup %s is empty", o->lookup_path);
-		else
-			err_prefix("lookup %s", o->lookup_path);
-		goto done;
-	}
-	ncols = (int)r.nfields;
-	names = xcalloc((size_t)ncols + 1, sizeof *names);
-	lens = xcalloc((size_t)ncols + 1, sizeof *lens);
-	for (int i = 0; i < ncols; i++) {
-		size_t n;
-		const uint8_t *f = csv_field(&r, (size_t)i, &n);
-		names[i] = dupn((const char *)f, n);
-		lens[i] = n;
-	}
-	int key = 0;
-	if (o->lookup_key) {
-		key = csv_find_column(&r, o->lookup_key);
-		if (key < 0) {
-			err_set("the lookup %s has no column \"%s\"", o->lookup_path, o->lookup_key);
-			goto done;
-		}
-	}
-	s->lk_key = dupn(names[key], lens[key]);
-	if (build_fields(s, names, lens, ncols, key, -1, -1) < 0)
-		goto done;
-	ht16_init(&s->lk_ix);
-	for (;;) {
-		if (csv_read(&r, &eof) < 0) {
-			err_prefix("lookup %s", o->lookup_path);
-			goto done;
-		}
-		if (eof)
-			break;
-		s->lk_rows++;
-		size_t n;
-		const uint8_t *id = csv_field(&r, (size_t)key, &n);
-		uint8_t h[16];
-		siphash128(id, n, h);
-		uint32_t ix;
-		if (ht16_get_or_put(&s->lk_ix, h, (uint32_t)s->lk_n, &ix)) {
-			s->lk_offs[ix] = r.rec_off;
-			continue;
-		}
-		if (s->lk_n == s->lk_cap) {
-			s->lk_cap = s->lk_cap ? s->lk_cap * 2 : 4096;
-			s->lk_offs = xrealloc(s->lk_offs, s->lk_cap * sizeof *s->lk_offs);
-		}
-		s->lk_offs[s->lk_n++] = r.rec_off;
-	}
-	/* a row is read where it starts, a short read at a time */
-	if (csv_open_at(&s->lk, path, 1 << 10) < 0) {
-		err_prefix("lookup");
-		goto done;
-	}
-	s->lk_open = true;
-	s->lk.comma = (uint8_t)delim;
-	s->lk.lazy_quotes = o->lazy_quotes;
 	s->lk_on = true;
-	rc = 0;
-done:
-	csv_close(&r);
-	for (int i = 0; i < ncols; i++)
-		free(names[i]);
-	free(names);
-	free(lens);
-	return rc;
+	return 0;
 }
 
 /* Points the field values at the lookup row of id, or at nothing (every
@@ -823,8 +683,7 @@ static int lookup_fetch(row_source *s, const uint8_t *id, size_t n)
 {
 	uint8_t h[16];
 	siphash128(id, n, h);
-	uint32_t ix;
-	s->vals = &s->lk;
+	s->vals = &s->lk.rd;
 	if (s->lk_has_last && memcmp(h, s->lk_last, 16) == 0) {
 		/* the same id as the row before: its lookup row is still read */
 		s->blank = s->lk_last_blank;
@@ -833,24 +692,13 @@ static int lookup_fetch(row_source *s, const uint8_t *id, size_t n)
 	}
 	memcpy(s->lk_last, h, 16);
 	s->lk_has_last = false;
-	s->blank = !ht16_get(&s->lk_ix, h, &ix);
-	if (s->blank) {
-		s->lk_missing++;
-		s->lk_has_last = true;
-		s->lk_last_blank = true;
-		return 0;
-	}
-	csv_seek(&s->lk, s->lk_offs[ix]);
-	bool eof;
-	if (csv_read(&s->lk, &eof) < 0 || eof) {
-		if (eof)
-			err_set("lookup %s: the row of id \"%.*s\" is gone", s->o->lookup_path, (int)(n < 100 ? n : 100), id);
-		else
-			err_prefix("lookup %s", s->o->lookup_path);
+	int found = ktable_fetch(&s->lk, id, n);
+	if (found < 0)
 		return -1;
-	}
+	s->blank = !found;
+	s->lk_missing += s->blank;
 	s->lk_has_last = true;
-	s->lk_last_blank = false;
+	s->lk_last_blank = s->blank;
 	return 0;
 }
 
@@ -861,7 +709,7 @@ static int csv_setup(row_source *s)
 	if (!delim && (has_suffix(o->input, ".tsv") || has_suffix(o->input, ".tsv.gz")))
 		delim = '\t';
 	if (!delim)
-		delim = detect_delimiter(s->pin.pre, s->pin.npre);
+		delim = csv_detect_delimiter(s->pin.pre, s->pin.npre);
 	csv_init_reader(&s->csv, pin_read, &s->pin);
 	s->csv_open = true;
 	s->csv.comma = (uint8_t)delim;
@@ -961,10 +809,14 @@ static int csv_setup(row_source *s)
 		goto done;
 	}
 	s->vals = &s->csv;
-	if (o->lookup_path) {
+	if (o->record) {
+		s->tm = tmpl_new(o, names, lens, s->ncols);
+		if (!s->tm)
+			goto done;
+	} else if (o->lookup_path) {
 		if (lookup_setup(s) < 0)
 			goto done;
-		const char *id = o->lookup_on ? o->lookup_on : s->lk_key;
+		const char *id = o->lookup_on ? o->lookup_on : s->lk.cols[s->lk.key];
 		s->id_col = -1;
 		for (int i = 0; i < s->ncols; i++)
 			if (strlen(id) == lens[i] && memcmp(id, names[i], lens[i]) == 0)
@@ -984,10 +836,16 @@ static int csv_setup(row_source *s)
 	else
 		snprintf(s->describe, sizeof s->describe, "CSV (%s-delimited, %s); range columns \"%s\" - \"%s\"; %d fields",
 			 dname, header ? "with a header" : "no header", names[s->start_col], names[s->end_col], s->nfields);
+	if (s->tm) {
+		/* "; N fields" does not apply: the template makes the record */
+		char *semi = strrchr(s->describe, ';');
+		if (semi)
+			snprintf(semi, sizeof s->describe - (size_t)(semi - s->describe), "; %s", tmpl_describe(s->tm));
+	}
 	if (s->lk_on) {
 		size_t l = strlen(s->describe);
 		snprintf(s->describe + l, sizeof s->describe - l, " from the lookup %s (%llu rows, %llu ids), by \"%s\"",
-			 o->lookup_path, (unsigned long long)s->lk_rows, (unsigned long long)s->lk_n, names[s->id_col]);
+			 o->lookup_path, (unsigned long long)s->lk.rows, (unsigned long long)s->lk.n, names[s->id_col]);
 	}
 	rc = 0;
 done:
@@ -1061,6 +919,12 @@ static row_status csv_next(row_source *s, row *out, char *why, size_t wl)
 	const uint8_t *b = s->end_col >= 0 ? csv_field(&s->csv, (size_t)s->end_col, &bn) : NULL;
 	if (parse_cells(net, nn, a, an, b, bn, out, why, wl) < 0)
 		return ROW_BAD;
+	if (s->tm) {
+		/* with a key the record waits for rows_build, which an earlier row's
+		 * record with the same key makes unnecessary */
+		out->key = tmpl_key(s->tm, &s->csv, &out->keylen);
+		return out->key ? ROW_OK : rows_build(s, out, why, wl);
+	}
 	if (s->lk_on) {
 		size_t idn;
 		const uint8_t *id = csv_field(&s->csv, (size_t)s->id_col, &idn);
@@ -1328,7 +1192,7 @@ static row_status json_row_object(row_source *s, const jnode *obj, row *out, cha
 	if (parse_cells(np, nn, ap, an, bp, bn, out, why, wl) < 0)
 		return ROW_BAD;
 	if (s->lk_on) {
-		const char *idk = s->o->lookup_on ? s->o->lookup_on : s->lk_key;
+		const char *idk = s->o->lookup_on ? s->o->lookup_on : s->lk.cols[s->lk.key];
 		const jnode *idv = member(obj, idk);
 		const uint8_t *id;
 		size_t idn;
@@ -1537,6 +1401,11 @@ row_source *rows_open(const build_opts *o)
 		return s;
 	}
 	s->json = true;
+	if (o->record) {
+		err_set("%s: a record template reads CSV or TSV input, not JSON", o->input);
+		rows_close(s);
+		return NULL;
+	}
 	if (o->lookup_path && lookup_setup(s) < 0) {
 		rows_close(s);
 		return NULL;
@@ -1559,13 +1428,41 @@ row_status rows_next(row_source *s, row *out, char *why, size_t whylen)
 	return st;
 }
 
+row_status rows_build(row_source *s, row *out, char *why, size_t whylen)
+{
+	if (!s->tm || out->rec)
+		return ROW_OK;
+	switch (tmpl_record(s->tm, &s->csv, &s->a, &out->rec, why, whylen)) {
+	case TM_OK:
+		return ROW_OK;
+	case TM_SKIP:
+		return ROW_SKIP;
+	case TM_BAD:
+		return ROW_BAD;
+	default:
+		return ROW_FATAL;
+	}
+}
+
 const char *rows_describe(const row_source *s) { return s->describe; }
 
 uint64_t rows_raw_bytes(const row_source *s) { return in_raw_bytes(s->pin.in); }
 
-uint64_t rows_utf8_fixed(const row_source *s) { return s->utf8_fixed; }
+uint64_t rows_utf8_fixed(const row_source *s) { return s->utf8_fixed + (s->tm ? tmpl_utf8_fixed(s->tm) : 0); }
 
 uint64_t rows_lookup_missing(const row_source *s) { return s->lk_missing; }
+
+void rows_report(const row_source *s, buf_t *out)
+{
+	if (s->tm)
+		tmpl_report(s->tm, out);
+}
+
+void rows_set_shared(row_source *s, shared *sh)
+{
+	if (s->tm)
+		tmpl_set_shared(s->tm, sh);
+}
 
 void rows_close(row_source *s)
 {
@@ -1580,16 +1477,8 @@ void rows_close(row_source *s)
 		free((void *)s->fields[i].empties);
 	}
 	free(s->fields);
-	if (s->lk_open)
-		csv_close(&s->lk);
-	if (s->lk_on || s->lk_n)
-		ht16_free(&s->lk_ix);
-	free(s->lk_offs);
-	free(s->lk_key);
-	if (s->lk_tmp) {
-		unlink(s->lk_tmp);
-		free(s->lk_tmp);
-	}
+	ktable_close(&s->lk);
+	tmpl_free(s->tm);
 	free(s->order);
 	shape_free(&s->root);
 	free(s->jnet);

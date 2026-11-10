@@ -25,6 +25,7 @@
 #include "rows.h"
 #include "tabular.h"
 #include "sha256.h"
+#include "shared.h"
 #include "streamwriter.h"
 
 #define IO_BUF (1u << 20)
@@ -219,59 +220,13 @@ static int load_record(store *s, arena *a, uint32_t id, mval **out)
 	if (d.len)
 		memcpy(own, d.buf, (size_t)d.len);
 	d.buf = own;
+	d.shared = true;
 	dnode *v;
 	uint64_t next;
 	if (mdec_value(&d, 0, a, &v, &next) < 0)
 		return -1;
 	*out = dnode_to_mval(a, v);
 	return 0;
-}
-
-/* ---- merging records (mmdbwriter's TopLevelMergeWith, DeepMergeWith) ---- */
-
-static int key_cmp(const mval *a, const mval *b)
-{
-	size_t n = a->n < b->n ? a->n : b->n;
-	int c = n ? memcmp(a->s, b->s, n) : 0;
-	return c ? c : (a->n < b->n ? -1 : a->n > b->n);
-}
-
-static mval merge_values(arena *ar, const mval *old, const mval *new_, bool deep)
-{
-	if (old->type == T_MAP && new_->type == T_MAP) {
-		mval *items = arena_alloc(ar, sizeof *items * (2 * ((size_t)old->n + new_->n) + 2));
-		uint32_t i = 0, j = 0, k = 0;
-		while (i < old->n || j < new_->n) {
-			int c = i == old->n ? 1 : j == new_->n ? -1 : key_cmp(&old->items[2 * i], &new_->items[2 * j]);
-			if (c < 0) {
-				items[2 * k] = old->items[2 * i];
-				items[2 * k + 1] = old->items[2 * i + 1];
-				i++;
-			} else if (c > 0) {
-				items[2 * k] = new_->items[2 * j];
-				items[2 * k + 1] = new_->items[2 * j + 1];
-				j++;
-			} else {
-				items[2 * k] = new_->items[2 * j];
-				items[2 * k + 1] = deep ? merge_values(ar, &old->items[2 * i + 1], &new_->items[2 * j + 1], true)
-							: new_->items[2 * j + 1];
-				i++;
-				j++;
-			}
-			k++;
-		}
-		return (mval){.type = T_MAP, .n = k, .items = items};
-	}
-	if (deep && old->type == T_ARRAY && new_->type == T_ARRAY) {
-		uint32_t n = old->n > new_->n ? old->n : new_->n;
-		mval *items = arena_alloc(ar, sizeof *items * ((size_t)n + 1));
-		for (uint32_t i = 0; i < n; i++)
-			items[i] = i >= new_->n ? old->items[i]
-				   : i >= old->n ? new_->items[i]
-						 : merge_values(ar, &old->items[i], &new_->items[i], true);
-		return (mval){.type = T_ARRAY, .n = n, .items = items};
-	}
-	return *new_;
 }
 
 /* ---- ranges ---- */
@@ -613,9 +568,112 @@ struct build {
 	u128 replay_prev; /* end + 1 of the previous piece */
 	bool replay_first;
 	ht16 merges; /* hash of a list of record ids -> the merged record */
+	shared *sh;  /* the big values records repeat, kept once (shared.h) */
+	buf_t mkey;  /* a merged value's encoding (reshared) */
 	mval *supply;
 	uint64_t pieces;
 };
+
+/* ---- merging records (mmdbwriter's TopLevelMergeWith, DeepMergeWith) ---- */
+
+static int key_cmp(const mval *a, const mval *b)
+{
+	size_t n = a->n < b->n ? a->n : b->n;
+	int c = n ? memcmp(a->s, b->s, n) : 0;
+	return c ? c : (a->n < b->n ? -1 : a->n > b->n);
+}
+
+static int merge_values(build *b, const mval *old, const mval *new_, bool deep, bool top, mval *out);
+
+/* A deep merge looks inside a shared value: its content (whose own shared
+ * values stay T_SHARED). */
+static int opened(build *b, const mval *v, const mval **out)
+{
+	if (v->type != T_SHARED) {
+		*out = v;
+		return 0;
+	}
+	mval *c;
+	if (shared_get(b->sh, (uint32_t)v->u, &b->a, &c) < 0)
+		return -1;
+	*out = c;
+	return 0;
+}
+
+/* A value a deep merge made becomes the shared value with its content, if
+ * there is one, so the record stays equal to records that hold it unmerged. */
+static int reshared(build *b, mval *v)
+{
+	b->mkey.len = 0;
+	if (mval_canonical(&b->mkey, v) < 0)
+		return -1;
+	uint32_t id;
+	if (b->mkey.len >= SHARE_MIN && shared_find(b->sh, b->mkey.p, b->mkey.len, &id))
+		*v = (mval){.type = T_SHARED, .u = id};
+	return 0;
+}
+
+static int merge_values(build *b, const mval *old, const mval *new_, bool deep, bool top, mval *out)
+{
+	arena *ar = &b->a;
+	if (deep && (old->type == T_SHARED || new_->type == T_SHARED)) {
+		if (old->type == new_->type && old->u == new_->u) {
+			*out = *new_; /* a value merged with itself */
+			return 0;
+		}
+		const mval *o, *n;
+		if (opened(b, old, &o) < 0 || opened(b, new_, &n) < 0)
+			return -1;
+		if ((o->type == T_MAP && n->type == T_MAP) || (o->type == T_ARRAY && n->type == T_ARRAY))
+			return merge_values(b, o, n, true, top, out);
+		*out = *new_;
+		return 0;
+	}
+	if (old->type == T_MAP && new_->type == T_MAP) {
+		mval *items = arena_alloc(ar, sizeof *items * (2 * ((size_t)old->n + new_->n) + 2));
+		uint32_t i = 0, j = 0, k = 0;
+		while (i < old->n || j < new_->n) {
+			int c = i == old->n ? 1 : j == new_->n ? -1 : key_cmp(&old->items[2 * i], &new_->items[2 * j]);
+			if (c < 0) {
+				items[2 * k] = old->items[2 * i];
+				items[2 * k + 1] = old->items[2 * i + 1];
+				i++;
+			} else if (c > 0) {
+				items[2 * k] = new_->items[2 * j];
+				items[2 * k + 1] = new_->items[2 * j + 1];
+				j++;
+			} else {
+				items[2 * k] = new_->items[2 * j];
+				if (!deep)
+					items[2 * k + 1] = new_->items[2 * j + 1];
+				else if (merge_values(b, &old->items[2 * i + 1], &new_->items[2 * j + 1], true, false,
+						      &items[2 * k + 1]) < 0)
+					return -1;
+				i++;
+				j++;
+			}
+			k++;
+		}
+		*out = (mval){.type = T_MAP, .n = k, .items = items};
+		return deep && !top ? reshared(b, out) : 0;
+	}
+	if (deep && old->type == T_ARRAY && new_->type == T_ARRAY) {
+		uint32_t n = old->n > new_->n ? old->n : new_->n;
+		mval *items = arena_alloc(ar, sizeof *items * ((size_t)n + 1));
+		for (uint32_t i = 0; i < n; i++) {
+			if (i >= new_->n)
+				items[i] = old->items[i];
+			else if (i >= old->n)
+				items[i] = new_->items[i];
+			else if (merge_values(b, &old->items[i], &new_->items[i], true, false, &items[i]) < 0)
+				return -1;
+		}
+		*out = (mval){.type = T_ARRAY, .n = n, .items = items};
+		return top ? 0 : reshared(b, out);
+	}
+	*out = *new_;
+	return 0;
+}
 
 /* the record in b->key (its canonical encoding) to its id */
 static int intern_key(build *b, uint32_t *id)
@@ -667,12 +725,11 @@ static int merged_record(sweep *s, uint32_t *rec)
 	mval *acc;
 	int rc = load_record(&b->st, &b->a, v[0].rec, &acc);
 	for (size_t i = 1; rc == 0 && i < s->nact; i++) {
-		mval *next;
-		if ((rc = load_record(&b->st, &b->a, v[i].rec, &next)) < 0)
+		mval *next, *m = arena_alloc(&b->a, sizeof *m);
+		if ((rc = load_record(&b->st, &b->a, v[i].rec, &next)) < 0 ||
+		    (rc = merge_values(b, acc, next, s->mode == MERGE_RECURSE, true, m)) < 0)
 			break;
-		mval m = merge_values(&b->a, acc, next, s->mode == MERGE_RECURSE);
-		acc = arena_alloc(&b->a, sizeof *acc);
-		*acc = m;
+		acc = m;
 	}
 	free(v);
 	if (rc < 0 || intern(b, acc, rec) < 0)
@@ -705,6 +762,12 @@ static int count_next(void *ctx, sw_segment *seg, bool *ok)
 	b->replay_prev = end + 1;
 	b->pieces++;
 	return rc;
+}
+
+static int load_shared(void *ctx, uint32_t id, mval **out)
+{
+	build *b = ctx;
+	return shared_get(b->sh, id, &b->a, out);
 }
 
 static int supply_value(void *ctx, mval **out)
@@ -899,6 +962,11 @@ static void warn_row(build *b, uint64_t *shown, long line, const char *why)
 		fprintf(stderr, "warn: %s:%ld: %s\n", b->o->input, line, why);
 }
 
+/* the record cache of template rows (build_mmdb) */
+#define KC_SKIP UINT32_MAX          /* the key's rows are left out by a skip rule */
+#define KC_TRIAL 1000000            /* lookups before checking that keys repeat */
+#define KC_MAX ((size_t)1 << 23)    /* keys kept at most */
+
 int build_mmdb(build_opts *o)
 {
 	int rc = -1;
@@ -920,7 +988,14 @@ int build_mmdb(build_opts *o)
 		rs.cap = 1024;
 	source src;
 	memset(&src, 0, sizeof src);
-	uint64_t rows = 0, inserted = 0, skipped = 0, shown = 0, clipped = 0;
+	uint64_t rows = 0, inserted = 0, skipped = 0, shown = 0, clipped = 0, ruled_out = 0;
+	/* a record template's key -> the record's id (or KC_SKIP): rows with a
+	 * key seen before skip building, encoding and interning their record.
+	 * It is dropped when keys rarely repeat (every row's key differs). */
+	ht16 kc;
+	ht16_init(&kc);
+	bool kc_on = true;
+	uint64_t kc_lookups = 0, kc_hits = 0;
 	char a1[32], a2[32], a3[32];
 
 	row_source *in = rows_open(o);
@@ -947,6 +1022,10 @@ int build_mmdb(build_opts *o)
 	b.w = sw_new(&opts);
 	if (!b.w)
 		goto done;
+	b.sh = shared_new(tmp);
+	rows_set_shared(in, b.sh);
+	sw_get_records(b.w)->data.shared_load = load_shared;
+	sw_get_records(b.w)->data.shared_ctx = &b;
 	if ((b.st.fd = temp_fd(tmp, "records")) < 0)
 		goto done;
 	bw_init(&b.st.w, b.st.fd);
@@ -962,6 +1041,10 @@ int build_mmdb(build_opts *o)
 		if (st == ROW_FATAL)
 			goto done;
 		rows++;
+		if (st == ROW_SKIP) {
+			ruled_out++;
+			continue;
+		}
 		if (st == ROW_OK) {
 			if (r.end < r.start) {
 				char x[64], y[64];
@@ -974,6 +1057,40 @@ int build_mmdb(build_opts *o)
 			}
 		}
 		uint32_t id = 0;
+		uint8_t kh[16];
+		bool keyed = st == ROW_OK && r.key && kc_on;
+		if (keyed) {
+			siphash128(r.key, r.keylen, kh);
+			kc_lookups++;
+			uint32_t v;
+			if (ht16_get(&kc, kh, &v)) {
+				kc_hits++;
+				if (v == KC_SKIP) {
+					ruled_out++;
+					continue;
+				}
+				id = v;
+				goto have_id;
+			}
+			if (kc_lookups == KC_TRIAL && kc_hits * 10 < kc_lookups) {
+				/* keys rarely repeat: the cache costs more than it saves */
+				kc_on = keyed = false;
+				ht16_free(&kc);
+				ht16_init(&kc);
+			}
+		}
+		if (st == ROW_OK && !r.rec) {
+			st = rows_build(in, &r, why, sizeof why);
+			if (st == ROW_FATAL)
+				goto done;
+			if (st == ROW_SKIP) {
+				uint32_t old;
+				if (keyed && kc.len < KC_MAX)
+					ht16_get_or_put(&kc, kh, KC_SKIP, &old);
+				ruled_out++;
+				continue;
+			}
+		}
 		if (st == ROW_OK && (o->no_fields || o->network_field || o->fill_gaps)) {
 			arena_reset(&row_a);
 			r.rec = shape_record(o, &row_a, r.rec, &r, &gap_keys);
@@ -985,6 +1102,9 @@ int build_mmdb(build_opts *o)
 				st = ROW_BAD;
 			} else if (intern_key(&b, &id) < 0) {
 				goto done;
+			} else if (keyed && kc.len < KC_MAX) {
+				uint32_t old;
+				ht16_get_or_put(&kc, kh, id, &old);
 			}
 		}
 		if (st == ROW_BAD) {
@@ -996,9 +1116,13 @@ int build_mmdb(build_opts *o)
 			warn_row(&b, &shown, r.line, why);
 			continue;
 		}
-		/* the pieces of the row outside the aliased networks */
+	have_id:;
+		/* the pieces of the row outside the aliased networks; with
+		 * ipv6_first every IPv4 row counts as later than every IPv6 one, as
+		 * if the file were read twice, IPv6 rows first */
 		bool cut;
-		if (push_outside_aliases(&rs, opts.alias_ipv6_to_ipv4, r.start, r.end, rows, id, &cut) < 0)
+		uint64_t seq = o->ipv6_first && r.is4 ? rows | (uint64_t)1 << 62 : rows;
+		if (push_outside_aliases(&rs, opts.alias_ipv6_to_ipv4, r.start, r.end, seq, id, &cut) < 0)
 			goto done;
 		if (cut)
 			clipped++;
@@ -1052,7 +1176,8 @@ int build_mmdb(build_opts *o)
 
 	int size = o->record_size;
 	if (size == 0) {
-		uint64_t data = b.st.offs ? b.st.offs[b.st.n] : 0; /* at most every record once */
+		/* at most every record and every shared value once */
+		uint64_t data = (b.st.offs ? b.st.offs[b.st.n] : 0) + shared_bytes(b.sh);
 		size = 32;
 		for (int cand = 24; cand <= 32; cand += 4) {
 			if (st.nodes + 16 + data < ((uint64_t)1 << cand)) {
@@ -1072,8 +1197,11 @@ int build_mmdb(build_opts *o)
 	st = sw_get_stats(b.w);
 	if (!o->quiet) {
 		fprintf(stderr, "input: %s\n", rows_describe(in));
-		fprintf(stderr, "rows: %s read, %s inserted, %s skipped\n", fmt_int(rows, a1), fmt_int(inserted, a2),
+		fprintf(stderr, "rows: %s read, %s inserted, %s skipped", fmt_int(rows, a1), fmt_int(inserted, a2),
 			fmt_int(skipped, a3));
+		if (ruled_out)
+			fprintf(stderr, ", %s left out by the record's skip rules", fmt_int(ruled_out, a1));
+		fprintf(stderr, "\n");
 		if (clipped)
 			fprintf(stderr,
 				"note: %s rows reached into the aliased IPv4 networks (::ffff:0:0/96, 2001::/32, "
@@ -1082,6 +1210,11 @@ int build_mmdb(build_opts *o)
 		if (rows_lookup_missing(in))
 			fprintf(stderr, "note: %s rows have an id the lookup lacks; every field of their records is empty\n",
 				fmt_int(rows_lookup_missing(in), a1));
+		buf_t notes = {0};
+		rows_report(in, &notes);
+		if (notes.len)
+			fprintf(stderr, "%s", buf_cstr(&notes));
+		buf_free(&notes);
 		if (rows_utf8_fixed(in))
 			fprintf(stderr, "note: %s values held invalid UTF-8; each bad byte became U+FFFD\n",
 				fmt_int(rows_utf8_fixed(in), a1));
@@ -1095,6 +1228,7 @@ int build_mmdb(build_opts *o)
 done:
 	rows_close(in);
 	sw_free(b.w);
+	shared_free(b.sh);
 	if (b.st.fd >= 0)
 		close(b.st.fd);
 	free(b.st.w.buf);
@@ -1117,9 +1251,11 @@ done:
 	free(src.heap);
 	free(b.sw.act);
 	buf_free(&b.key);
+	buf_free(&b.mkey);
 	ht16_free(&b.merges);
 	arena_free(&b.a);
 	arena_free(&row_a);
 	columns_free(&gap_keys);
+	ht16_free(&kc);
 	return rc;
 }

@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include "compat.h"
@@ -63,6 +64,16 @@ instream *in_open(const char *path)
 		s->path = "stdin";
 	} else {
 		s->fd = open(path, O_RDONLY | O_CLOEXEC);
+		size_t n = strlen(path);
+		if (s->fd < 0 && errno == ENOENT && !(n > 3 && strcasecmp(path + n - 3, ".gz") == 0)) {
+			/* data.csv may be there only as data.csv.gz */
+			buf_t gz = {0};
+			buf_printf(&gz, "%s.gz", path);
+			s->fd = open(buf_cstr(&gz), O_RDONLY | O_CLOEXEC);
+			buf_free(&gz);
+			if (s->fd < 0)
+				errno = ENOENT;
+		}
 		if (s->fd < 0) {
 			err_set("open %s: %s", path, go_strerror(errno));
 			free(s);
