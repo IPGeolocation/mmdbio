@@ -37,6 +37,14 @@ typedef struct {
 	char *column, *value; /* this column's value that reads as empty */
 } empty_rule;
 
+/* A table of a record template: a CSV keyed by one of its columns. */
+typedef struct {
+	char *name, *path, *key; /* key NULL: the first column */
+	int trim;                /* -1: the record's default */
+} table_spec;
+
+struct jvalue;
+
 typedef struct {
 	char *input, *output;
 	in_format format;
@@ -81,6 +89,13 @@ typedef struct {
 	bool languages_set; /* languages given, possibly as none */
 	bool range_first2;  /* the first two columns are the range (mmdbctl's --range-multicol) */
 	bool joinkey_col;   /* and the third is left out (mmdbctl's --joinkey-col) */
+	bool ipv6_first;    /* every IPv6 row counts as earlier than every IPv4 row ("order") */
+	char **var_names, **var_values; /* ${name} in the config's paths */
+	int nvars;
+	struct jvalue *record; /* the config's "record": a record template (tmpl.h), owned */
+	char *record_file;     /* the config file it came from, for messages */
+	table_spec *tables;    /* the template's tables, their paths resolved */
+	int ntables;
 } build_opts;
 
 /* The defaults; every string is owned (freed by build_opts_free). */
@@ -100,6 +115,9 @@ void opts_set_type(build_opts *o, const char *path, vtype t);
 void opts_set_rename(build_opts *o, const char *column, const char *key);
 /* Adds a value of column that reads as empty. */
 void opts_add_empty(build_opts *o, const char *column, const char *value);
+/* Sets ${name} for the config's paths; replace false keeps an earlier value
+ * (a --var given on the command line wins over the config's "vars"). */
+void opts_set_var(build_opts *o, const char *name, const char *value, bool replace);
 
 /* Builds o->output. Returns 0, or -1 with err_set. */
 int build_mmdb(build_opts *o);

@@ -34,6 +34,9 @@ void arena_free(arena *a);
 typedef struct {
 	const uint8_t *buf;
 	uint64_t len;
+	/* the bytes are a canonical encoding (mval_canonical) whose pointers are
+	 * shared-value ids: they decode to T_SHARED values, not followed */
+	bool shared;
 } mdec;
 
 /* Decodes the value at off, following pointers, into *out; *next is the

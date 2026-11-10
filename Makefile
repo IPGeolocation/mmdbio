@@ -43,7 +43,7 @@ BUILD := build
 ZLIB_SRC := adler32.c crc32.c inffast.c inflate.c inftrees.c zutil.c
 ZLIB_OBJ := $(addprefix $(BUILD)/zlib/,$(ZLIB_SRC:.c=.o))
 CORE := common utf8 csv sha256 hashtab mmdb_enc mmdb_read json streamwriter netaddr flags jsonw input jstream \
-	rows bconfig engine compat color tabular shrink shrink_check cmd_common cmd_read cmd_info cmd_export cmd_diff \
+	rows tables tmpl shared bconfig engine compat color tabular shrink shrink_check cmd_common cmd_read cmd_info cmd_export cmd_diff \
 	cmd_completion cmd_import cmd_shrink
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 HEADERS := $(wildcard src/*.h) $(wildcard third_party/zlib/*.h) include/mmdbio.h

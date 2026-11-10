@@ -66,4 +66,8 @@ static inline const uint8_t *csv_field(const csv_reader *r, size_t i, size_t *le
  * -1. With duplicate names the last one wins, as in Go's index map. */
 int csv_find_column(const csv_reader *r, const char *name);
 
+/* The delimiter of the first line of p: the most frequent of comma, tab,
+ * semicolon and pipe outside quotes (comma when none appears). */
+char csv_detect_delimiter(const uint8_t *p, size_t n);
+
 #endif

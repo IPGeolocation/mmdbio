@@ -74,6 +74,26 @@ void csv_seek(csv_reader *r, int64_t off)
 	r->num_line = 0;
 }
 
+char csv_detect_delimiter(const uint8_t *p, size_t n)
+{
+	static const char cands[] = {',', '\t', ';', '|'};
+	size_t count[4] = {0};
+	bool q = false;
+	for (size_t i = 0; i < n && (q || p[i] != '\n'); i++) {
+		if (p[i] == '"')
+			q = !q;
+		else if (!q)
+			for (int k = 0; k < 4; k++)
+				if (p[i] == (uint8_t)cands[k])
+					count[k]++;
+	}
+	int best = 0;
+	for (int k = 1; k < 4; k++)
+		if (count[k] > count[best])
+			best = k;
+	return cands[best];
+}
+
 int csv_find_column(const csv_reader *r, const char *name)
 {
 	int found = -1;

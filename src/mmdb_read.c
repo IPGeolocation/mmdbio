@@ -328,7 +328,16 @@ static int decode(const mdec *d, uint64_t off, arena *a, dnode *out, uint64_t *n
 		return -1;
 	if (kind == T_POINTER) {
 		uint64_t target, after, ignored;
-		if (pointer_at(d, size, p, &target, &after) < 0 || ctrl(d, target, &kind, &size, &p) < 0)
+		if (pointer_at(d, size, p, &target, &after) < 0)
+			return -1;
+		if (d->shared) {
+			memset(out, 0, sizeof *out);
+			out->kind = T_SHARED;
+			out->u = target;
+			*next = after;
+			return 0;
+		}
+		if (ctrl(d, target, &kind, &size, &p) < 0)
 			return -1;
 		if (kind == T_POINTER) {
 			err_set("invalid pointer to pointer at offset %llu", (unsigned long long)off);
