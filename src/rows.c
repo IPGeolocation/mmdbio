@@ -102,7 +102,7 @@ static char *dupn(const char *s, size_t n)
 	return p;
 }
 
-/* Invalid UTF-8 becomes U+FFFD, so the file passes MaxMind's checks. */
+/* Invalid UTF-8 becomes U+FFFD, so the file passes the format's checks. */
 static void clean_utf8(row_source *s, const uint8_t **p, size_t *n)
 {
 	if (utf8_valid(*p, *n))

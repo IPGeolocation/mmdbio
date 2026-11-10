@@ -55,7 +55,7 @@ int mmdbio_lookup(const mmdbio_db *db, const char *ip, int *found, char **json, 
 typedef int (*mmdbio_network_fn)(void *ctx, const char *network, const char *json);
 int mmdbio_networks(const mmdbio_db *db, mmdbio_network_fn fn, void *ctx);
 
-/* The checks of maxminddb-golang's Verify: tree, data section, metadata. */
+/* The format's checks: the search tree, the data section, the metadata. */
 int mmdbio_verify(const char *path);
 
 /* ---- shrinking ---- */

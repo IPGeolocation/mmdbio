@@ -49,7 +49,7 @@ typedef struct {
 	int ip_version;
 	bool alias_ipv6_to_ipv4;
 	bool remove_reserved_networks;
-	/* The source applied MaxMind::DB::Writer's alias rules to each input row
+	/* The source applied the alias rules to each input row
 	 * itself and hands over pieces of overlapping rows (details.c), so a
 	 * segment may end at an aliased network without covering its parent. It
 	 * must still cover any aliased network it touches in full. */

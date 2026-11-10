@@ -65,7 +65,7 @@ static int canon(canon_state *s, uint64_t ptr, int depth, uint32_t *cv)
 	}
 	if (ptr > n) {
 		if (ptr < n + 16 || ptr - n - 16 >= r->data.len) {
-			err_set("the MaxMind DB file's search tree is corrupt");
+			err_set("the MMDB file's search tree is corrupt");
 			return -1;
 		}
 		uint64_t off = ptr - n - 16;

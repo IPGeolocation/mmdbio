@@ -244,7 +244,7 @@ static int check_alias(const span *s, const fixed_net *a)
 			return 0;
 	}
 	char x[64], y[64], z[80];
-	err_set("range %s - %s inserts into the aliased network %s, which MaxMind::DB::Writer refuses too",
+	err_set("range %s - %s inserts into the aliased network %s, which holds no data of its own",
 		fmt_addr(s->start, x), fmt_addr(s->end, y), fmt_network(a->start, a->depth, z));
 	return -1;
 }

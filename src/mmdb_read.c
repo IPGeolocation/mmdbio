@@ -183,7 +183,7 @@ static int decode(const mdec *d, uint64_t off, arena *a, dnode *out, uint64_t *n
 
 static int bad_size(const char *what, uint64_t size)
 {
-	err_set("the MaxMind DB file's data section contains bad data (%s size of %llu)", what,
+	err_set("the MMDB file's data section contains bad data (%s size of %llu)", what,
 		(unsigned long long)size);
 	return -1;
 }
@@ -716,7 +716,7 @@ int mmdb_open(mmdb_reader *r, const char *path)
 		}
 	}
 	if (marker == (size_t)-1) {
-		err_set("error opening database: invalid MaxMind DB file");
+		err_set("error opening database: invalid MMDB file");
 		return -1;
 	}
 	r->meta.buf = r->map + marker + MARKER_LEN;
@@ -791,7 +791,7 @@ int mmdb_open(mmdb_reader *r, const char *path)
 	r->tree_size = r->node_count * quarter;
 	uint64_t data_start = r->tree_size + 16, data_end = marker;
 	if (r->tree_size > UINT64_MAX - 16 || data_start > data_end) {
-		err_set("the MaxMind DB contains invalid metadata");
+		err_set("the MMDB file contains invalid metadata");
 		return -1;
 	}
 	r->data.buf = r->map + data_start;
@@ -863,7 +863,7 @@ int mmdb_lookup_net(const mmdb_reader *r, u128 ip, bool is4, uint64_t *offset, b
 		return 0;
 	if (node > r->node_count) {
 		if (node < r->node_count + 16 || node - r->node_count - 16 >= r->data.len) {
-			err_set("the MaxMind DB file's search tree is corrupt");
+			err_set("the MMDB file's search tree is corrupt");
 			return -1;
 		}
 		*offset = node - r->node_count - 16;
@@ -906,7 +906,7 @@ int net_iter_next(net_iter *it, u128 *ip, int *bit, uint64_t *offset)
 				break;
 			if (node.pointer > r->node_count) {
 				if (node.pointer < r->node_count + 16 || node.pointer - r->node_count - 16 >= r->data.len) {
-					err_set("the MaxMind DB file's search tree is corrupt");
+					err_set("the MMDB file's search tree is corrupt");
 					return -1;
 				}
 				*ip = node.ip;
@@ -975,7 +975,7 @@ static int verify_pointer(tree_walk *w, uint64_t p, unsigned depth, unsigned *he
 	if (p < r->node_count)
 		return verify_node(w, p, depth, height);
 	if (p < r->node_count + 16 || p - r->node_count - 16 >= r->data.len) {
-		err_set("the MaxMind DB file's search tree is corrupt");
+		err_set("the MMDB file's search tree is corrupt");
 		return -1;
 	}
 	uint32_t dummy;

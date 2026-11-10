@@ -76,7 +76,7 @@ same "inspect: sample not found" "No record found for this IP." "$M" inspect --d
 same "inspect --out" "$(cat "$here/data/schema.json")" cat schema/dir/schema.json
 same "verify" "valid" "$M" verify --db ip-to-city.mmdb
 printf 'not an mmdb' > junk.mmdb
-same "verify: invalid" "invalid: error opening database: invalid MaxMind DB file" "$M" verify --db junk.mmdb
+same "verify: invalid" "invalid: error opening database: invalid MMDB file" "$M" verify --db junk.mmdb
 "$M" export --db ip-to-city.mmdb --out output.json > out.txt
 same "export" "$(cat "$here/data/export.json")" cat output.json
 same "export: summary" "Exported 3 records to output.json" cat out.txt

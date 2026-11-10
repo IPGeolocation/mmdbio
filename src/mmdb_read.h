@@ -1,5 +1,5 @@
 /* An MMDB reader for mmdb-diff: metadata, tree walking in address order,
- * value decoding and the checks of maxminddb-golang's Verify. */
+ * value decoding and the format's checks (verify). */
 #ifndef MMDB_READ_H
 #define MMDB_READ_H
 
@@ -84,7 +84,7 @@ int mmdb_open(mmdb_reader *r, const char *path);
 void mmdb_close(mmdb_reader *r);
 int mmdb_read_node(const mmdb_reader *r, uint64_t node, uint64_t *left, uint64_t *right);
 int mmdb_verify(const mmdb_reader *r);
-/* maxminddb-golang's Lookup: an IPv4 address (is4, the value in the low 32
+/* A lookup: an IPv4 address (is4, the value in the low 32
  * bits) goes from the ::/96 node of an IPv6 tree. *found is false where the
  * tree has no data; *offset is then the record's data-section offset. */
 int mmdb_lookup(const mmdb_reader *r, u128 ip, bool is4, uint64_t *offset, bool *found);
@@ -93,7 +93,7 @@ int mmdb_lookup(const mmdb_reader *r, u128 ip, bool is4, uint64_t *offset, bool 
 int mmdb_lookup_net(const mmdb_reader *r, u128 ip, bool is4, uint64_t *offset, bool *found, int *prefix);
 
 /* Networks with data in address order, skipping IPv4 aliases like
- * maxminddb-golang's Networks(). */
+ * the Go readers' Networks(). */
 typedef struct {
 	u128 ip;
 	int bit;

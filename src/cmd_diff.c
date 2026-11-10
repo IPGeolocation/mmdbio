@@ -38,7 +38,7 @@ command cmd_diff = {
 	.name = "diff",
 	.use = "diff [flags] [old.mmdb new.mmdb]",
 	.short_desc = "Compare two MMDB files and show differences",
-	.long_desc = "Compares two MaxMind MMDB files and lists networks that were added, removed, or modified.",
+	.long_desc = "Compares two MMDB files and lists networks that were added, removed, or modified.",
 	.examples = "  mmdbio diff --old old.mmdb --new new.mmdb\n  mmdbio diff --old old.mmdb --new new.mmdb --summary\n"
 		    "  mmdbio diff --old old.mmdb --new new.mmdb --json\n  mmdbio diff old.mmdb new.mmdb --subnets --records",
 	.flags = diff_flags,

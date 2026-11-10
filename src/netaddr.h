@@ -19,7 +19,7 @@ bool parse_network(const char *s, size_t n, u128 *start, u128 *end, bool *is4);
 bool parse_address(const char *s, size_t n, u128 *out, bool *is4);
 
 /* net.IPNet.String for a tree network: IPv4 when it lies in ::/96 with a
- * prefix of at least 96 bits (as maxminddb-golang returns them), else IPv6.
+ * prefix of at least 96 bits (as the Go readers return them), else IPv6.
  * bits is the prefix length in the 128-bit space. */
 const char *fmt_net(u128 ip, int bits, char out[80]);
 /* net.IP.String of an address given as IPv4 or not. */

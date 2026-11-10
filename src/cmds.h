@@ -20,12 +20,12 @@ _Noreturn void missing_flag(command *c, const char *msg);
 /* extractField: follows a dotted path through maps; NULL when a step is
  * missing or not a map. */
 const dnode *extract_field(const dnode *v, const char *path);
-/* fmt.Sprint of a decoded value, as maxminddb-golang hands it to Go. */
+/* fmt.Sprint of a decoded value, as the Go reader hands it to Go. */
 void go_sprint(const dnode *v, buf_t *out);
 /* Go's reflect type name of a decoded value: string, uint64, int, float64,
  * float32, bool, *big.Int, []uint8. */
 const char *go_type_name(const dnode *v);
-/* reflect.DeepEqual of two decoded values after maxminddb-golang's decoding
+/* reflect.DeepEqual of two decoded values after the Go reader's decoding
  * into interface{} (all unsigned types but uint128 become uint64). */
 bool go_deep_equal(const dnode *a, const dnode *b);
 
