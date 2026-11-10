@@ -39,7 +39,7 @@ static flag metadata_flags[] = {
 	{.name = "data-types", .type = F_BOOL,
 	 .usage = "Also break the data section down by value type (reads the whole section)"},
 	{.name = "json", .type = F_BOOL, .usage = "Output in JSON format: every metadata key, and the layout"},
-	{.name = "format", .shorthand = 'f', .type = F_STRING, .def = "text", .usage = "text (or pretty, mmdbctl's name), or json (as --json)"},
+	{.name = "format", .shorthand = 'f', .type = F_STRING, .def = "text", .usage = "text (or pretty), or json (as --json)"},
 };
 
 /* ---- the data section by type ---- */
@@ -148,7 +148,7 @@ static int run_metadata(command *c, int argc, char **argv)
 	uint64_t data_start = r.tree_size + 16, data_end = data_start + r.data.len;
 	uint64_t meta_start = (uint64_t)(r.meta.buf - r.map);
 	const char *mfmt = flag_get(c, "format")->str;
-	if (strcmp(mfmt, "pretty") == 0) /* mmdbctl's name for text */
+	if (strcmp(mfmt, "pretty") == 0) /* another name for text */
 		mfmt = "text";
 	if (strcmp(mfmt, "text") != 0 && strcmp(mfmt, "json") != 0)
 		go_fatalf("Invalid --format '%s': use text or json", mfmt);

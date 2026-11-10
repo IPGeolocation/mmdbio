@@ -87,8 +87,8 @@ typedef struct {
 	empty_rule *empties;
 	int nempties;
 	bool languages_set; /* languages given, possibly as none */
-	bool range_first2;  /* the first two columns are the range (mmdbctl's --range-multicol) */
-	bool joinkey_col;   /* and the third is left out (mmdbctl's --joinkey-col) */
+	bool range_first2;  /* the first two columns are the range (--range-multicol) */
+	bool joinkey_col;   /* and the third is left out (--joinkey-col) */
 	bool ipv6_first;    /* every IPv6 row counts as earlier than every IPv4 row ("order") */
 	char **var_names, **var_values; /* ${name} in the config's paths */
 	int nvars;

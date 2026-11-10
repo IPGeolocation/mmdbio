@@ -75,19 +75,19 @@ static flag import_flags[] = {
 	 .usage = "column=key: store a column (or top-level JSON key) under another name (repeatable)"},
 	{.name = "empty-if", .type = F_ARRAY,
 	 .usage = "column=value: read that value of the column as empty, e.g. country=- (repeatable)"},
-	/* mmdbctl import's flags, so its command lines work as they are */
-	{.name = "csv", .type = F_BOOL, .usage = "mmdbctl's --csv: the input is CSV (--format csv)"},
-	{.name = "tsv", .type = F_BOOL, .usage = "mmdbctl's --tsv: the input is TSV (--format tsv)"},
-	{.name = "json", .shorthand = 'j', .type = F_BOOL, .usage = "mmdbctl's --json: the input is JSON (--format json)"},
+	/* other names for the flags above, so older command lines work as they are */
+	{.name = "csv", .type = F_BOOL, .usage = "The input is CSV (--format csv)"},
+	{.name = "tsv", .type = F_BOOL, .usage = "The input is TSV (--format tsv)"},
+	{.name = "json", .shorthand = 'j', .type = F_BOOL, .usage = "The input is JSON (--format json)"},
 	{.name = "fields", .shorthand = 'f', .type = F_LIST,
-	 .usage = "mmdbctl's --fields: names for the columns after the range column(s), for a CSV without a header"},
-	{.name = "fields-from-header", .type = F_BOOL, .usage = "mmdbctl's --fields-from-header: the first row names the columns (--header true)"},
-	{.name = "range-multicol", .type = F_BOOL, .usage = "mmdbctl's --range-multicol: the first two columns are the range's first and last IP"},
-	{.name = "joinkey-col", .type = F_BOOL, .usage = "mmdbctl's --joinkey-col: --range-multicol, and the third column (join_key) is left out"},
-	{.name = "no-network", .type = F_BOOL, .usage = "mmdbctl's --no-network: records get no network field, which is the default here"},
-	{.name = "ignore-empty-values", .type = F_BOOL, .usage = "mmdbctl's name for --fill-gaps"},
+	 .usage = "Names for the columns after the range column(s), for a CSV without a header"},
+	{.name = "fields-from-header", .type = F_BOOL, .usage = "The first row names the columns (--header true)"},
+	{.name = "range-multicol", .type = F_BOOL, .usage = "The first two columns are the range's first and last IP"},
+	{.name = "joinkey-col", .type = F_BOOL, .usage = "--range-multicol, and the third column (join_key) is left out"},
+	{.name = "no-network", .type = F_BOOL, .usage = "Records get no network field, which is the default"},
+	{.name = "ignore-empty-values", .type = F_BOOL, .usage = "Another name for --fill-gaps"},
 	{.name = "disable-metadata-pointers", .type = F_BOOL, .def = "true",
-	 .usage = "mmdbctl's flag, accepted: mmdbio never puts pointers in the metadata"},
+	 .usage = "Accepted and ignored: mmdbio never puts pointers in the metadata"},
 };
 
 static int run_import(command *c, int argc, char **argv);
@@ -433,7 +433,7 @@ static int run_import(command *c, int argc, char **argv)
 			*eq = '=';
 		}
 	}
-	/* mmdbctl's flags */
+	/* the other names */
 	if (flag_get(c, "csv")->b)
 		o.format = FMT_CSV;
 	if (flag_get(c, "tsv")->b) {

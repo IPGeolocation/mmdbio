@@ -132,7 +132,7 @@ rc, out, _ = run("metadata", "city.mmdb", "--layout")
 check("metadata --layout", rc == 0 and "Format:        2.0" in out and "Data Section:" in out, out)
 rc, pretty, _ = run("metadata", "city.mmdb", "-f", "pretty")
 _, text, _ = run("metadata", "city.mmdb", "-f", "text")
-check("metadata -f pretty (mmdbctl's name) is -f text", rc == 0 and pretty == text and "MMDB Metadata" in text,
+check("metadata -f pretty is -f text", rc == 0 and pretty == text and "MMDB Metadata" in text,
       pretty)
 for cmd in ("stats", "verify", "inspect"):
     rc, out, _ = run(cmd, "city.mmdb")

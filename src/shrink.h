@@ -39,7 +39,7 @@ int mmdb_shrink(const char *in, const char *out, const shrink_opts *o, shrink_re
 
 /* ---- the checks (shrink_check.c) ---- */
 
-/* Exit codes of a failed check, as IPinfo's mmdbshrink uses them. */
+/* Exit codes of a failed check. */
 enum { CHECK_LOOKUP = 2, CHECK_METADATA = 4 };
 
 typedef struct {

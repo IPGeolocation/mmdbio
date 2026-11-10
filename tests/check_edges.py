@@ -351,7 +351,7 @@ run("import", "shape.csv", "nof.mmdb", "-q", "--ip", "4", "--no-fields", "--netw
 lookups_match("nof.mmdb", {"1.0.0.1": {"network": "1.0.0.0/24"}, "3.0.0.1": None}, "--no-fields with --network-field")
 write("hl.csv", "1.0.0.0,1.0.0.255,k,DE\n")
 run("import", "hl.csv", "mc.mmdb", "-q", "--ip", "4", "--joinkey-col", "--fields", "country")
-lookups_match("mc.mmdb", {"1.0.0.1": {"country": "DE"}}, "mmdbctl's --joinkey-col --fields")
+lookups_match("mc.mmdb", {"1.0.0.1": {"country": "DE"}}, "--joinkey-col --fields")
 run("import", "hl.csv", "cols.mmdb", "-q", "--ip", "4", "--columns", "a,b,c,d", "--start-column", "a",
     "--end-column", "b", "--exclude", "c")
 lookups_match("cols.mmdb", {"1.0.0.1": {"d": "DE"}}, "--columns names a headerless CSV")
