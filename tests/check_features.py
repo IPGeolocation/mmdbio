@@ -163,6 +163,13 @@ rc, out, _ = run("diff", "old.mmdb", "new.mmdb", "-s", "-r", "--summary")
 check("diff -s -r --summary", out == "Subnets changed: 4 | Records changed: 1\n", out)
 rc, out, _ = run("diff", "old.mmdb", "new.mmdb", "--summary")
 check("diff old new (arguments, the exact-prefix compare)", out == "Added: 3 | Removed: 2 | Modified: 1\n", out)
+# {"v": "b"} with a pointer past the data section for its value
+raw = open("old.mmdb", "rb").read()
+with open("bad.mmdb", "wb") as f:
+    f.write(raw.replace(b"\xe1\x41v\x41b", b"\xe1\x41v\x27\xff"))
+rc, out, err = run("diff", "bad.mmdb", "new.mmdb", "--summary")
+check("diff: a record that does not decode stops it with a warning and exit status 1",
+      raw.count(b"\xe1\x41v\x41b") == 1 and rc == 1 and "error reading old db" in err, (rc, out, err))
 
 # ---- import ----
 write("nf.csv", "net,kind\n1.0.0.0/24,vpn\n2.0.0.0-2.0.0.9,tor\n3.3.3.3,proxy\n")
