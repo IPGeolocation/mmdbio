@@ -20,7 +20,7 @@ jobs:
               gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 wine wine32:i386 wine64 rpm
             cc32: i686-linux-gnu-gcc-14
           - os: macos-latest    # darwin-arm64
-          - os: macos-13        # darwin-amd64
+          - os: macos-15-intel  # darwin-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -80,13 +80,18 @@ $(BUILD)/libmmdbio.a: $(CORE_OBJ) $(BUILD)/libmmdbio.o $(ZLIB_OBJ)
 	# replace libc's own and leave its references unresolved
 	$(NM) -g --defined-only $(BUILD)/libmmdbio-all.o | awk '$$3 ~ /^__x86\.get_pc_thunk/ {print $$3}' >> $(BUILD)/libmmdbio.exports
 	@# an objcopy that can't (llvm-objcopy on Windows objects) leaves every name global.
+	@# One that complains has failed too, even when it exits 0: OpenBSD's binutils
+	@# 2.17 drops the clang relocations it doesn't know and writes a broken object.
 	@# clang's .llvm_addrsig loses its discard flag in the -r link on Windows; kept,
 	@# it is placed at address 0 and the program won't load, so it goes either way
 	if ! { command -v $(OBJCOPY) > /dev/null 2>&1 && \
-	       $(OBJCOPY) -R .llvm_addrsig --keep-global-symbols=$(BUILD)/libmmdbio.exports $(BUILD)/libmmdbio-all.o $(BUILD)/libmmdbio-one.o; }; then \
+	       $(OBJCOPY) -R .llvm_addrsig --keep-global-symbols=$(BUILD)/libmmdbio.exports $(BUILD)/libmmdbio-all.o \
+	           $(BUILD)/libmmdbio-one.o 2> $(BUILD)/objcopy.err && ! [ -s $(BUILD)/objcopy.err ]; }; then \
 		echo "note: $(OBJCOPY) can't hide the library's internal names; they stay global"; \
-		$(OBJCOPY) -R .llvm_addrsig $(BUILD)/libmmdbio-all.o $(BUILD)/libmmdbio-one.o 2> /dev/null || \
+		if ! { $(OBJCOPY) -R .llvm_addrsig $(BUILD)/libmmdbio-all.o $(BUILD)/libmmdbio-one.o 2> $(BUILD)/objcopy.err && \
+		       ! [ -s $(BUILD)/objcopy.err ]; }; then \
 			cp $(BUILD)/libmmdbio-all.o $(BUILD)/libmmdbio-one.o; \
+		fi; \
 	fi
 	rm -f $@
 	$(LIBAR) rcs $@ $(BUILD)/libmmdbio-one.o

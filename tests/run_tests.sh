@@ -107,7 +107,9 @@ else bad "a missing file" "$(cat out.txt)"; fi
 for sh in bash zsh fish powershell; do
 	if "$M" completion "$sh" | grep -q __complete; then ok "completion $sh"; else bad "completion $sh"; fi
 done
-if command -v bash > /dev/null && bash -n -c "$("$M" completion bash)"; then ok "the bash completion parses"; else bad "bash completion"; fi
+if ! command -v bash > /dev/null; then
+	ok "the bash completion parses (no bash here: not checked)"
+elif bash -n -c "$("$M" completion bash)"; then ok "the bash completion parses"; else bad "bash completion"; fi
 got=$("$M" __complete 2 export --format "" | tr '\n' ' ')
 if [ "$got" = "json jsonl csv tsv cidr " ]; then ok "completion: a flag's values"; else bad "completion values" "$got"; fi
 got=$("$M" __complete 1 verify "" | tr '\n' ' ')

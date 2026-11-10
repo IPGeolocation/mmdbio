@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: vmactions/freebsd-vm@v1
         with:
-          prepare: pkg install -y gmake python3
+          prepare: pkg install -y gmake python3 bash
           run: gmake all lib && gmake test
 
   openbsd:
@@ -89,7 +89,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: vmactions/openbsd-vm@v1
         with:
-          prepare: pkg_add -I gmake python%3
+          prepare: pkg_add -I gmake python%3 bash
           run: gmake all lib && gmake test
 
   netbsd:
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: vmactions/dragonflybsd-vm@v1
         with:
-          prepare: pkg install -y gmake python3
+          prepare: pkg install -y gmake python3 bash
           run: gmake all lib && gmake test
 
   illumos:
@@ -118,5 +118,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: vmactions/omnios-vm@v1
         with:
-          prepare: pkg install developer/gcc14 developer/build/gnu-make runtime/python-312
-          run: gmake CC=gcc all lib && gmake CC=gcc test
+          # python3 comes with the OS (pkg is written in it); `|| true`: pkg
+          # exits 4 when everything is installed already
+          prepare: pkg install developer/gcc14 developer/build/gnu-make || true; python3 --version
+          run: gmake CC=gcc all lib && gmake CC=gcc PYTHON=python3 test
