@@ -111,3 +111,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          # v2.0.0-rc.1 and the like: a pre-release, never the "latest" the installers fetch
+          prerelease: ${{ contains(github.ref_name, '-') }}
