@@ -171,9 +171,21 @@ if [ "$os" = linux ] && [ "$arch" = amd64 ]; then
 	fi
 fi
 
+# sha256sum's "HASH  FILE" lines from whichever tool the system has: sha256sum
+# (Linux), shasum (macOS), or openssl (the BSDs without either)
+sum256() {
+	if have sha256sum; then
+		sha256sum "$1"
+	elif have shasum; then
+		shasum -a 256 "$1"
+	else
+		echo "$(openssl dgst -sha256 "$1" | awk '{print $NF}')  $1"
+	fi
+}
+
 cd dist
 for f in *.tar.gz *.zip *.deb *.rpm; do
 	[ -f "$f" ] || continue
-	if have sha256sum; then sha256sum "$f"; else shasum -a 256 "$f"; fi
+	sum256 "$f"
 done > SHA256SUMS
 cat SHA256SUMS
