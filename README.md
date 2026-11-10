@@ -54,8 +54,8 @@ and its header (`mmdbio.h`).
 You need a C compiler and make; there is nothing else to install.
 
 ```bash
-git clone <this repository> mmdbio-c
-cd mmdbio-c
+git clone https://github.com/IPGeolocation/mmdbio.git
+cd mmdbio
 make
 sudo make install      # mmdbio in /usr/local/bin, the library and its header
 ```
@@ -197,6 +197,9 @@ for the numbers).
 | `!=` | equals none of them |
 | `>`, `>=`, `<`, `<=` | numeric comparison; numeric strings count as numbers |
 
+- Quote the condition when it uses `>`, `<` or spaces, for example
+  `--where 'threat_score>=80'`. Unquoted, the shell treats `>` and `<` as
+  redirection and the filter never reaches mmdbio.
 - Text comparisons ignore case.
 - On an array field, a match on any element counts.
 - A record without the field never matches.
