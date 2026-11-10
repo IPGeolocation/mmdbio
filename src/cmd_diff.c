@@ -415,9 +415,16 @@ static int run_diff(command *c, int argc, char **argv)
 		else
 			which = o.bit == n.bit ? 0 : (o.bit < n.bit ? -1 : 1);
 		if (which == 0) {
-			dnode *a = decode(&o), *b = decode(&n);
-			if (!a || !b)
+			/* a value that does not decode stops the walk, as a tree that
+			 * does not read does: the counts so far come with a warning */
+			dnode *a = decode(&o), *b = a ? decode(&n) : NULL;
+			if (!a || !b) {
+				if (!a)
+					old_ok = false;
+				else
+					new_ok = false;
 				break;
+			}
 			if (!go_deep_equal(a, b)) {
 				fmt_net(o.ip, o.bit, net);
 				if (lists[2]) {
@@ -448,8 +455,13 @@ static int run_diff(command *c, int argc, char **argv)
 		if (sec->f) {
 			if (json) {
 				dnode *v = decode(s);
-				if (!v)
+				if (!v) {
+					if (which < 0)
+						old_ok = false;
+					else
+						new_ok = false;
 					break;
+				}
 				ja.len = 0;
 				jw_value(&ja, v, "", 2);
 				section_add(sec, net, &ja);
@@ -506,5 +518,5 @@ static int run_diff(command *c, int argc, char **argv)
 	arena_free(&n.a);
 	mmdb_close(&o.r);
 	mmdb_close(&n.r);
-	return 0;
+	return old_ok && new_ok ? 0 : 1;
 }
