@@ -145,8 +145,13 @@ if [ "$os" = linux ] && [ "$arch" = amd64 ]; then
 	fi
 	llvm_tools="LIBAR=$(llvm llvm-ar) NM=$(llvm llvm-nm) OBJCOPY=$(llvm llvm-objcopy)"
 	if have clang && have arm-linux-gnueabihf-gcc; then
+		# gcc-arm-linux-gnueabihf's linker, named: clang before 21 looks for an
+		# armv7-linux-gnueabihf-ld and falls back to the host's x86 ld (the flag
+		# is unused when only compiling, which -Werror would stop on)
+		armcc="clang --target=armv7-linux-gnueabihf --ld-path=$(command -v arm-linux-gnueabihf-ld)"
+		armcc="$armcc -Wno-unused-command-line-argument"
 		# shellcheck disable=SC2086
-		cross linux-armv7 linux armv7 qemu-arm CC="clang --target=armv7-linux-gnueabihf" $llvm_tools
+		cross linux-armv7 linux armv7 qemu-arm CC="$armcc" $llvm_tools
 	else
 		echo "skipping linux-armv7: clang and gcc-arm-linux-gnueabihf (for its libc) are needed"
 	fi
