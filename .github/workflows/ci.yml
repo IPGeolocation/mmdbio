@@ -1,8 +1,17 @@
 name: ci
 
+# once per commit: pull requests, then main after the merge; other branches
+# from the Actions tab (Run workflow)
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# a new push to a pull request cancels its older run; runs on main finish
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unix:

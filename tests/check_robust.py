@@ -7,6 +7,9 @@ Usage: check_robust.py MMDBIO WORKDIR
 Builds a small database, then feeds the readers corrupted and truncated
 copies of it, and feeds import broken gzip, CSV and JSON. With an ASan/UBSan
 build of mmdbio, sanitizer reports count as failures too.
+
+ROBUST_EVERY=N runs only every Nth reader on the corrupted copies, for
+runners where each start of mmdbio is slow (wine); the rest runs in full.
 """
 import gzip
 import os
@@ -17,6 +20,7 @@ import sys
 MMDBIO, WORK = sys.argv[1], sys.argv[2]
 os.makedirs(WORK, exist_ok=True)
 rng = random.Random(3)
+EVERY = int(os.environ.get("ROBUST_EVERY", "1"))
 failures = 0
 runs = 0
 
@@ -82,12 +86,15 @@ for cut in (0, 1, 10, 100, len(data) // 2, len(data) - 20, len(data) - 1):
 cases.append(("random bytes", bytes(rng.randrange(256) for _ in range(5000))))
 cases.append(("only the marker", b"\xab\xcd\xefMaxMind.com"))
 
+n = 0
 for label, blob in cases:
     db = path("bad.mmdb")
     with open(db, "wb") as f:
         f.write(blob)
     for cmd in readers:
-        run([db if a == "DB" else a for a in cmd], f"{cmd[0]} on {label}")
+        n += 1
+        if n % EVERY == 0:  # 19 readers per case: a step of 10 reaches every reader and every case
+            run([db if a == "DB" else a for a in cmd], f"{cmd[0]} on {label}")
 
 # import: broken inputs of every kind
 inputs = {
@@ -149,5 +156,6 @@ for words in (["0"], ["5", "x"], ["-3", "read"], ["1", "export", "--format="], [
     run(["__complete", *words], f"__complete {words}")
 
 print("----")
-print(f"{runs} runs, {failures} failed")
+sample = f" (1 in {EVERY} of the corrupted-file runs)" if EVERY > 1 else ""
+print(f"{runs} runs{sample}, {failures} failed")
 sys.exit(1 if failures else 0)

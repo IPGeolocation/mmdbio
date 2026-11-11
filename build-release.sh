@@ -99,7 +99,10 @@ check() {
 		$run "$b/unit-tests$ext"
 		$run "$b/lib-test$ext" "$w/lib"
 	fi
-	sh tests/run_tests.sh "$w/mmdbio"
+	# each start of mmdbio under wine takes ~1.5 s: sample the corrupted-file runs
+	every=1
+	[ "$run" = wine ] && every=10
+	ROBUST_EVERY=$every sh tests/run_tests.sh "$w/mmdbio"
 	rm -rf "$w"
 }
 
