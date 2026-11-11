@@ -1,0 +1,11 @@
+MMDB Metadata
+-----------------------------
+Database Type: Demo-City-DB
+IP Version:    4
+Record Size:   32 bits
+Node Count:    59
+Build Date:    Fri, 06 Nov 2026 20:52:18 PKT
+Languages:     [en]
+Description: {
+    "en": "Demo IP to City database"
+  }

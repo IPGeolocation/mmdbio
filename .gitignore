@@ -1,8 +1,8 @@
-# Build artifacts
+build/
+build-*/
 dist/
-*.exe
-*.tar.gz
-*.zip
 *.mmdb
-*.txt
-*.json
+*.mmdb.tmp
+__pycache__/
+.idea/
+.vscode/
