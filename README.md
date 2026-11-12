@@ -49,7 +49,7 @@ addresses can also be given without their flags, for example
 ### import
 
 Build an MMDB file from a CSV, TSV, JSON or NDJSON file, gzipped or not.
-The examples in this README use this `ips.csv`:
+The examples below use this `ips.csv` file:
 
 ```csv
 network,country,city,asn,is_vpn,score
@@ -295,7 +295,7 @@ mmdbio export --db ips.mmdb --range 8.8.0.0/16                     # only networ
 | --- | --- |
 | `--db file` | The MMDB file. |
 | `--out file` | The output file (`-` or none: the screen). |
-| `-f` | `json`, `jsonl`, `csv`, `tsv`, or `cidr` (only the blocks, with neighbours joined; `--aggregate=false` lists them as stored) |
+| `-f` | `json`, `jsonl`, `csv`, `tsv`, or `cidr` (only the blocks, with neighboring blocks joined; `--aggregate=false` lists them as stored) |
 | `--where` | `field=a,b`, `field!=a,b`, `field>N` (also `>=`, `<`, `<=`). Text ignores case. |
 | `--fields a,b` | Only these fields. |
 | `--family 4` or `6` | Only IPv4 or only IPv6 networks. |
